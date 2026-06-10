@@ -125,6 +125,7 @@ const MapView = (() => {
   function clearAll() { clearRoutes(); clearMarkers(); hideStopMarkers(); hideBikeMarkers(); hideRouteStopMarkers(); }
 
   function onClick(cb) { map.on('click', (e) => cb(e.latlng.lat, e.latlng.lng)); }
+  function clearClick() { map.off('click'); }
   function flyTo(lat, lon, zoom) {
     if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return;
     map.flyTo([lat, lon], zoom || 15, { duration: 0.6 });
@@ -147,19 +148,21 @@ const MapView = (() => {
     const distance = opts.distance != null ? `<span style="font-size:10px;color:#888">(${Math.round(opts.distance)}m)</span>` : '';
     const routeTags = opts.routeTags ? opts.routeTags.slice(0, 8).map(r => `<span class="popup-route-tag">${r}</span>`).join('') : '';
     const extraLine = opts.extraLine || '';
+    const stopLetter = opts.stopLetter || '';
+    const stopLetterHtml = stopLetter ? `<span class="stop-letter">${stopLetter}</span>` : '';
     const is3d = mlMap && document.getElementById('map-3d')?.style.display !== 'none';
     let popup = null, mlPopup = null;
     if (!is3d) {
       popup = L.popup({ className: 'stop-detail-popup', closeButton: true, maxWidth: 300 })
         .setLatLng([lat, lon])
-        .setContent(`<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${stopName}</strong></div>${modeStr ? `<div class="stop-popup-modes">${modeStr} ${distance}</div>` : ''}${extraLine}<div class="stop-popup-loading"><div class="spinner"></div><span>Loading departures...</span></div></div>`)
+        .setContent(`<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${stopName}</strong> ${stopLetterHtml} <span class="stop-code">${stopId}</span></div>${modeStr ? `<div class="stop-popup-modes">${modeStr} ${distance}</div>` : ''}${extraLine}<div class="stop-popup-loading"><div class="spinner"></div><span>Loading departures...</span></div></div>`)
         .openOn(map);
     }
     if (mlMap) {
       try {
         mlPopup = new maplibregl.Popup({ className: 'stop-detail-popup', closeButton: true, maxWidth: '300px' });
         mlPopup.setLngLat([lon, lat]);
-        mlPopup.setHTML(`<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${stopName}</strong></div>${modeStr ? `<div class="stop-popup-modes">${modeStr} ${distance}</div>` : ''}${extraLine}<div class="stop-popup-loading"><div class="spinner"></div><span>Loading departures...</span></div></div>`);
+        mlPopup.setHTML(`<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${stopName}</strong> ${stopLetterHtml} <span class="stop-code">${stopId}</span></div>${modeStr ? `<div class="stop-popup-modes">${modeStr} ${distance}</div>` : ''}${extraLine}<div class="stop-popup-loading"><div class="spinner"></div><span>Loading departures...</span></div></div>`);
         mlPopup.addTo(mlMap);
       } catch {}
     }
@@ -219,9 +222,9 @@ const MapView = (() => {
       const m = L.marker([s.lat, s.lon], { icon }).addTo(map);
       const modeStr = s.modes.map(mo => modeIcons[mo] || '').filter(Boolean).join('');
       const routeStr = s.lines && s.lines.length ? `${s.lines.slice(0,5).join(', ')}${s.lines.length>5?'...':''}` : '';
-      m.bindTooltip(`<strong>${s.name}</strong><br>${modeStr} ${routeStr ? '· '+routeStr : ''}`, { direction:'top', className:'stop-tooltip' });
+      m.bindTooltip(`<strong>${s.name}</strong> <span class="stop-code">${s.id}</span><br>${modeStr} ${routeStr ? '· '+routeStr : ''}`, { direction:'top', className:'stop-tooltip' });
       const popupEl = document.createElement('div');
-      popupEl.innerHTML = `<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${s.name}</strong></div><div class="stop-popup-loading"><div class="spinner"></div><span>Loading departures...</span></div></div>`;
+      popupEl.innerHTML = `<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${s.name}</strong> <span class="stop-code">${s.id}</span></div><div class="stop-popup-loading"><div class="spinner"></div><span>Loading departures...</span></div></div>`;
       const popContent = popupEl.firstElementChild;
       (async () => {
         try {
@@ -247,17 +250,17 @@ const MapView = (() => {
             });
             if (arr.length > 8) h += `<div style="font-size:9px;color:#888;padding:2px 0">+${arr.length-8} more</div>`;
             h += `<button class="stop-popup-btn" style="margin-top:6px" data-sid="${s.id}" data-sname="${s.name}" data-slat="${s.lat}" data-slon="${s.lon}">📋 View Full Timetable</button>`;
-            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong></div><div class="popup-departures-list">${h}</div>`;
+            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong> <span class="stop-code">${s.id}</span></div><div class="popup-departures-list">${h}</div>`;
             popContent.querySelector('.stop-popup-btn')?.addEventListener('click', (e) => {
               const b = e.currentTarget;
               map.closePopup();
               document.dispatchEvent(new CustomEvent('open-departures', { detail: { id: b.dataset.sid, name: b.dataset.sname, lat: +b.dataset.slat, lon: +b.dataset.slon } }));
             });
           } else {
-            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">No arrivals at this time</div>`;
+            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong> <span class="stop-code">${s.id}</span></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">No arrivals at this time</div>`;
           }
         } catch {
-          popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">Error loading departures</div>`;
+          popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong> <span class="stop-code">${s.id}</span></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">Error loading departures</div>`;
         }
       })();
       m.on('click', () => {
@@ -265,11 +268,11 @@ const MapView = (() => {
           .setLatLng([s.lat, s.lon])
           .setContent(popContent)
           .openOn(map);
-        document.dispatchEvent(new CustomEvent('open-departures', { detail: { id: s.id, name: s.name, lat: s.lat, lon: s.lon } }));
+        document.dispatchEvent(new CustomEvent('open-departures', { detail: { id: s.id, name: s.name, lat: s.lat, lon: s.lon, stopLetter: s.stopLetter } }));
       });
       stopMarkers.push(m);
-      const mlm = makeMlMarker(s.lat, s.lon, html, 'stop-marker', () => showStopLivePopup(s.id, s.name, s.lat, s.lon, { modeStr, distance: s.distance, routeTags: s.lines }));
-      if (mlm) { mlStopMarkers.push(mlm); stopMarkerData.push({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, html, modes: s.modes, lines: s.lines, distance: s.distance, modeStr }); }
+      const mlm = makeMlMarker(s.lat, s.lon, html, 'stop-marker', () => showStopLivePopup(s.id, s.name, s.lat, s.lon, { modeStr, distance: s.distance, routeTags: s.lines, stopLetter: s.stopLetter }));
+      if (mlm) { mlStopMarkers.push(mlm); stopMarkerData.push({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, html, modes: s.modes, lines: s.lines, distance: s.distance, modeStr, stopLetter: s.stopLetter }); }
     });
   }
 
@@ -344,8 +347,8 @@ const MapView = (() => {
       const html = `<div style="background:${color||'#e32017'};width:10px;height:10px;border-radius:50%;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.4);cursor:pointer"><span class="rs-inner-dot">${i+1}</span></div>`;
       const icon = L.divIcon({ className:'stop-marker route-stop-marker', html, iconSize:[14,14], iconAnchor:[7,7] });
       const m = L.marker([s.lat, s.lon], { icon }).addTo(map);
-      m.bindTooltip(`${i+1}. ${s.name}`, { direction:'top', className:'stop-tooltip' });
-      const rsClick = () => showStopLivePopup(s.id, s.name, s.lat, s.lon, { extraLine: `<div class="stop-popup-modes" style="margin-bottom:6px">Stop #${i+1}</div>` });
+      m.bindTooltip(`${i+1}. ${s.name} <span class="stop-code">${s.id}</span>`, { direction:'top', className:'stop-tooltip' });
+      const rsClick = () => showStopLivePopup(s.id, s.name, s.lat, s.lon, { extraLine: `<div class="stop-popup-modes" style="margin-bottom:6px">Stop #${i+1}</div>`, stopLetter: s.stopLetter });
       m.on('click', rsClick);
       routeStopMarkers.push(m);
       routeStopMarkerData.push({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, html, color });
@@ -407,7 +410,7 @@ const MapView = (() => {
       routeData.forEach(d => { try { addRoute3d(d.points, d.color); } catch {} });
       stopMarkerData.forEach(s => {
         try {
-          const stopClick = () => { showStopLivePopup(s.id, s.name, s.lat, s.lon, { modeStr: s.modeStr, distance: s.distance, routeTags: s.lines }); document.dispatchEvent(new CustomEvent('open-departures', { detail: { id: s.id, name: s.name, lat: s.lat, lon: s.lon } })); };
+          const stopClick = () => { showStopLivePopup(s.id, s.name, s.lat, s.lon, { modeStr: s.modeStr, distance: s.distance, routeTags: s.lines, stopLetter: s.stopLetter }); document.dispatchEvent(new CustomEvent('open-departures', { detail: { id: s.id, name: s.name, lat: s.lat, lon: s.lon, stopLetter: s.stopLetter } })); };
           const mlm = makeMlMarker(s.lat, s.lon, s.html, 'stop-marker', stopClick);
           if (mlm) mlStopMarkers.push(mlm);
         } catch {}
@@ -415,7 +418,7 @@ const MapView = (() => {
       syncBikeMarkers3d();
       routeStopMarkerData.forEach(s => {
         try {
-          const rsClick = () => showStopLivePopup(s.id, s.name, s.lat, s.lon, { extraLine: `<div class="stop-popup-modes" style="margin-bottom:6px">Stop</div>` });
+          const rsClick = () => showStopLivePopup(s.id, s.name, s.lat, s.lon, { extraLine: `<div class="stop-popup-modes" style="margin-bottom:6px">Stop</div>`, stopLetter: s.stopLetter });
           const mlm = makeMlMarker(s.lat, s.lon, s.html, 'route-stop-marker', rsClick);
           if (mlm) mlRouteStopMarkers.push(mlm);
         } catch {}
@@ -441,7 +444,7 @@ const MapView = (() => {
             const popup = new maplibregl.Popup({ className: 'stop-detail-popup', closeButton: true, maxWidth: '240px' });
             popup.setLngLat([b.lon, b.lat]);
             popup.setHTML(`
-              <div style="font-size:13px;font-weight:700;margin-bottom:4px">🚲 ${b.name}</div>
+              <div style="font-size:13px;font-weight:700;margin-bottom:4px">🚲 ${b.name} <span class="stop-code">${b.id.replace('BikePoints_', '')}</span></div>
               <div style="font-size:11px;line-height:1.5">
                 <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Available bikes</span><strong>${b.bikes}</strong></div>
                 <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Empty docks</span><strong>${b.spaces}</strong></div>
@@ -482,5 +485,6 @@ const MapView = (() => {
     });
   }
 
-  return { init, addMarker, addRoute, fitBounds, clearRoutes, clearMarkers, clearAll, onClick, flyTo, getActiveCenter, getMap: () => map, showStopMarkers, hideStopMarkers, showBikeMarkers, hideBikeMarkers, showRouteStopMarkers, hideRouteStopMarkers, showUserLocation, hideUserLocation, isUserLocationVisible, setFollowMode, isFollowMode, onMoveEnd, offMoveEnd, showStopLivePopup, set3dMap, get3dMap, clear3dAll, clear3dState, resync3d, syncBikeMarkers3d };
+  function getStopData(id) { return stopMarkerData.find(s => s.id === id); }
+  return { init, addMarker, addRoute, fitBounds, clearRoutes, clearMarkers, clearAll, onClick, clearClick, flyTo, getActiveCenter, getMap: () => map, showStopMarkers, hideStopMarkers, showBikeMarkers, hideBikeMarkers, showRouteStopMarkers, hideRouteStopMarkers, showUserLocation, hideUserLocation, isUserLocationVisible, setFollowMode, isFollowMode, onMoveEnd, offMoveEnd, showStopLivePopup, set3dMap, get3dMap, clear3dAll, clear3dState, resync3d, syncBikeMarkers3d, getStopData };
 })();

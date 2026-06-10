@@ -2,8 +2,11 @@ const Api = (() => {
   const BASE = CONFIG.tflApiBase;
   const KEY = CONFIG.tflApiKey;
   let rateLimitQueue = Promise.resolve();
+  let rateLimitCount = 0;
 
   function rateLimited(fn) {
+    if (rateLimitCount > 100) { rateLimitQueue = Promise.resolve(); rateLimitCount = 0; }
+    rateLimitCount++;
     rateLimitQueue = rateLimitQueue.then(() => fn()).then(r => new Promise(resolve => setTimeout(() => resolve(r), 200)));
     return rateLimitQueue;
   }

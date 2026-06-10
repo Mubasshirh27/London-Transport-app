@@ -78,7 +78,7 @@
               <button id="plan-btn" class="btn-primary"><span class="ic" data-ic="search"></span> Plan Journey</button>
               <button id="swap-btn" class="btn-secondary" title="Swap from/to"><span class="ic" data-ic="swap"></span></button>
               <button id="clear-btn" class="btn-secondary" title="Clear"><span class="ic" data-ic="close"></span></button>
-              <button id="nearby-btn" class="btn-secondary" title="Show nearby stops"><span class="ic" data-ic="nearby"></span> Nearby</button>
+              <button id="nearby-btn" class="btn-secondary" title="Show nearby stops from current location"><span class="ic" data-ic="nearby"></span> Nearby</button>
             </div>
           </div>
           <div class="stop-check-section">
@@ -134,7 +134,13 @@
           <button class="panel-close" title="Close"><span class="ic" data-ic="close"></span></button>
         </div>
       </div>
-      <div class="panel-body" id="nearby-list"></div>
+      <div class="panel-body" id="nearby-body">
+        <div class="nearby-search-wrap">
+          <input type="text" id="nearby-search-input" placeholder="Search place to check nearby stops..." autocomplete="off" />
+          <div class="suggestions" id="nearby-search-suggestions"></div>
+        </div>
+        <div id="nearby-list"></div>
+      </div>
     </div>
     <div id="departures-panel" class="slide-panel" style="display:none">
       <div class="panel-header">
@@ -174,6 +180,7 @@
     <button id="close-map-btn" class="map-overlay-btn" title="Close map"><span class="ic" data-ic="close"></span></button>
     <button id="view-3d-btn" class="map-overlay-btn view-3d" title="Toggle 3D view"><span class="ic" data-ic="map"></span> 3D</button>
     <div id="map-click-info" class="hidden">Click on map to set <strong id="click-target-label">from</strong> location</div>
+    <div id="map-click-info-bike" class="hidden">Click on map to set <strong>bike search</strong> location</div>
     <div id="map-legend" class="hidden">
       <span class="legend-item"><span class="legend-dot" style="background:#e32017"></span>Bus</span>
       <span class="legend-item"><span class="legend-dot" style="background:#0019a8"></span>Tube</span>

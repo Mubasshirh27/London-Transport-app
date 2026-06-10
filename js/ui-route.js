@@ -22,16 +22,20 @@
       + (terminiStr ? '<div class="route-termini" style="color:' + modeColor + '">' + modeIcon + ' ' + modeName + ' \u00b7 ' + terminiStr + '</div>' : '')
       + '<div class="route-stop-list">'
       + stops.map((s, i) => {
-        return '<div class="route-stop-item" data-stop-id="' + (s.stopId || s.id) + '" data-lat="' + s.lat + '" data-lon="' + s.lon + '" data-stop-name="' + s.name + '">'
+        const stopCodeHtml = (s.stopId || s.id) ? '<span class="stop-code">' + (s.stopId || s.id) + '</span>' : '';
+        const stopLetterHtml = s.stopLetter ? '<span class="stop-letter">' + s.stopLetter + '</span>' : '';
+        return '<div class="route-stop-item" data-stop-id="' + (s.stopId || s.id) + '" data-lat="' + s.lat + '" data-lon="' + s.lon + '" data-stop-name="' + s.name + '" data-stop-letter="' + (s.stopLetter || '') + '">'
           + '<span class="rs-index">' + (i + 1) + '</span>'
           + '<span class="rs-dot" style="background:' + modeColor + '"></span>'
           + '<span class="rs-name">' + s.name + '</span>'
+          + stopCodeHtml
+          + stopLetterHtml
           + '</div>';
       }).join('')
       + '</div>';
     el.querySelectorAll('.route-stop-item').forEach(item => {
       item.addEventListener('click', () => {
-        UI.showDepartures(item.dataset.stopId, item.dataset.stopName);
+        UI.showDepartures(item.dataset.stopId, item.dataset.stopName, item.dataset.stopLetter || '');
         MapView.flyTo(parseFloat(item.dataset.lat), parseFloat(item.dataset.lon));
       });
     });

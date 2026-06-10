@@ -149,7 +149,7 @@
     try { arrivals = await Stops.getArrivals(stopId); } catch (e) { console.log('[Timetable] Arrivals error:', e); }
     const displayName = arrivals.length ? (arrivals.find(a => a.lineId === lineId || a.line === lineId)?.line || lineId) : lineId;
     const headerSuffix = directionFilter ? ' (' + directionFilter + ')' : '';
-    panel.querySelector('h3').innerHTML = '📋 ' + displayName + headerSuffix + ' Timetable \u00b7 ' + stopName;
+    panel.querySelector('h3').innerHTML = '📋 ' + displayName + headerSuffix + ' Timetable \u00b7 ' + stopName + ' <span class="stop-code">' + stopId + '</span>';
 
     const resolvedStopIds = await Stops.resolveStopIds(stopId).catch(() => [stopId]);
     console.log('[Timetable] Resolved stop IDs:', resolvedStopIds);
@@ -250,7 +250,7 @@
     panel.dataset.stopName = stopName;
     const list = document.getElementById('departures-list');
     list.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-    panel.querySelector('h3').innerHTML = '📋 ' + stopName + ' Timetable';
+    panel.querySelector('h3').innerHTML = '📋 ' + stopName + ' Timetable <span class="stop-code">' + stopId + '</span>';
     let routes = [], liveArrivals = [];
     try {
       liveArrivals = await Stops.getArrivals(stopId);

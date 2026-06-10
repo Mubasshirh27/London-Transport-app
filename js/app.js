@@ -9,6 +9,7 @@
   let activeZoom = null;
   let bikeLocation = null;
   let bikePinTarget = null;
+  let pinModeActive = false;
 
   document.addEventListener('DOMContentLoaded', async () => {
     UI.init();
@@ -68,9 +69,51 @@
           const input = target === 'from' ? document.getElementById('from-input') : document.getElementById('to-input');
           if (input) { input.focus(); input.select(); }
         }, 350);
-        return;
+return;
+    }
+
+    // --- Pin Mode UI helpers ---
+    UI.setMapPinMode = function(mode) {
+      pinModeActive = true;
+      const overlay = document.getElementById('map-overlay');
+      const clickInfo = document.getElementById('map-click-info');
+      const clickInfoBike = document.getElementById('map-click-info-bike');
+      const label = document.getElementById('click-target-label');
+      overlay.classList.remove('hidden');
+      overlay.classList.add('open');
+      document.getElementById('map-fab').innerHTML = '<span class="ic" data-ic="close"></span>';
+      clickInfo.classList.add('hidden');
+      clickInfoBike.classList.add('hidden');
+      if (mode === 'bike') {
+        clickInfoBike.classList.remove('hidden');
+      } else {
+        label.textContent = mode;
+        clickInfo.classList.remove('hidden');
       }
-      if (!UI.isBikeMarkersVisible()) {
+      document.body.style.overflow = 'hidden';
+    };
+    UI.clearMapPinMode = function() {
+      pinModeActive = false;
+      const overlay = document.getElementById('map-overlay');
+      overlay.classList.remove('open');
+      overlay.classList.add('hidden');
+      document.getElementById('map-fab').innerHTML = '<span class="ic" data-ic="map"></span>';
+      document.getElementById('map-click-info').classList.add('hidden');
+      document.getElementById('map-click-info-bike').classList.add('hidden');
+      document.body.style.overflow = '';
+      bikePinTarget = null;
+      pinTarget = null;
+    };
+    UI.isPinModeActive = function() { return pinModeActive; };
+
+    // Make close button in map overlay clear pin mode
+    document.getElementById('close-map-btn').addEventListener('click', () => {
+      if (bikePinTarget || pinTarget) {
+        UI.clearMapPinMode();
+      }
+    });
+
+    if (!UI.isBikeMarkersVisible()) {
         try {
           const stops = await Stops.getNearby(lat, lon);
           if (stops.length) {
@@ -78,9 +121,10 @@
             MapView.showStopLivePopup(s.id, s.name, s.lat, s.lon, {
               modeStr: s.modes.map(m => Stops.getModeIcon(m)).join(''),
               distance: s.distance,
-              routeTags: s.lines
+              routeTags: s.lines,
+              stopLetter: s.stopLetter
             });
-            document.dispatchEvent(new CustomEvent('open-departures', { detail: { id: s.id, name: s.name, lat: s.lat, lon: s.lon } }));
+            document.dispatchEvent(new CustomEvent('open-departures', { detail: { id: s.id, name: s.name, lat: s.lat, lon: s.lon, stopLetter: s.stopLetter } }));
           }
         } catch {}
       }
@@ -1415,15 +1459,90 @@ function start3DMap() {
       }
       tripEnd3D = end3D;
     });
-    document.getElementById('nearby-btn').addEventListener('click', () => {
-      const center = MapView.getActiveCenter();
-      UI.showNearbyStops(center.lat, center.lng);
-      // Switch to journey tab if not already there
+    function switchToJourneyTab() {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
       document.querySelector('.tab-btn[data-tab="journey"]').classList.add('active');
       document.getElementById('tab-journey').classList.add('active');
+    }
+
+    // Nearby button → direct GPS
+    document.getElementById('nearby-btn').addEventListener('click', () => {
+      if (!navigator.geolocation) { UI.showError('Geolocation not supported'); return; }
+      const btn = document.getElementById('nearby-btn');
+      btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px"></span> Locating...';
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          UI.showNearbyStops(lat, lon);
+          MapView.flyTo(lat, lon, 15);
+          btn.innerHTML = '<span class="ic" data-ic="nearby"></span> Nearby';
+          switchToJourneyTab();
+        },
+        (err) => {
+          UI.showError('Location error: ' + err.message);
+          btn.innerHTML = '<span class="ic" data-ic="nearby"></span> Nearby';
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
     });
+
+    
+
+    // Search place in nearby panel
+    (function setupNearbySearch() {
+      const input = document.getElementById('nearby-search-input');
+      const suggestionsEl = document.getElementById('nearby-search-suggestions');
+      if (!input) return;
+      let timeout;
+      input.addEventListener('input', () => {
+        clearTimeout(timeout);
+        const q = input.value.trim();
+        if (q.length < 2) { suggestionsEl.innerHTML = ''; suggestionsEl.classList.remove('active'); return; }
+        timeout = setTimeout(async () => {
+          const results = await Geocoder.search(q);
+          if (results.length) {
+            suggestionsEl.innerHTML = results.map(r =>
+              `<div class="suggestion-item" data-label="${r.label}" data-lat="${r.lat}" data-lon="${r.lon}">
+                <span class="sug-type">📍</span>
+                <span class="sug-label">${r.label}</span>
+                <span class="sug-sub">${(r.fullLabel || '').substring(0, 80)}</span>
+              </div>`
+            ).join('');
+            suggestionsEl.classList.add('active');
+          } else {
+            suggestionsEl.innerHTML = '<div class="suggestion-item" style="color:#999;cursor:default">No results</div>';
+            suggestionsEl.classList.add('active');
+          }
+        }, 200);
+      });
+      suggestionsEl.addEventListener('click', (e) => {
+        const item = e.target.closest('.suggestion-item');
+        if (!item || !item.dataset.lat) return;
+        const lat = parseFloat(item.dataset.lat);
+        const lon = parseFloat(item.dataset.lon);
+        input.value = item.dataset.label;
+        suggestionsEl.innerHTML = '';
+        suggestionsEl.classList.remove('active');
+        UI.showNearbyStops(lat, lon);
+        MapView.flyTo(lat, lon, 15);
+      });
+      input.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          suggestionsEl.innerHTML = '';
+          suggestionsEl.classList.remove('active');
+          const q = input.value.trim();
+          if (!q) return;
+          const results = await Geocoder.search(q);
+          if (results.length) {
+            const r = results[0];
+            UI.showNearbyStops(r.lat, r.lon);
+            MapView.flyTo(r.lat, r.lon, 15);
+          }
+        }
+      });
+    })();
 
     // --- Live Location Tracking ---
     document.addEventListener('toggle-live', () => {
@@ -1444,7 +1563,7 @@ function start3DMap() {
             const { latitude: lat, longitude: lon } = pos.coords;
             MapView.showUserLocation(lat, lon);
             if (MapView.isFollowMode()) MapView.flyTo(lat, lon, 16);
-            UI.showNearbyStops(lat, lon);
+            UI.showNearbyStops(lat, lon, true);
           },
           (err) => { UI.showError('Location error: ' + err.message); toggleLiveOff(); },
           { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
@@ -1452,7 +1571,7 @@ function start3DMap() {
         liveNearbyTimer = setInterval(async () => {
           if (MapView.isUserLocationVisible() && navigator.geolocation) {
             navigator.geolocation.getCurrentPosition(
-              (pos) => UI.showNearbyStops(pos.coords.latitude, pos.coords.longitude),
+              (pos) => UI.showNearbyStops(pos.coords.latitude, pos.coords.longitude, true),
               () => {},
               { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
             );
@@ -1477,8 +1596,8 @@ function start3DMap() {
 
     // --- Open departures from map stop click ---
     document.addEventListener('open-departures', (e) => {
-      const { id, name, lat, lon } = e.detail;
-      UI.showDepartures(id, name);
+      const { id, name, lat, lon, stopLetter } = e.detail;
+      UI.showDepartures(id, name, stopLetter || '');
       MapView.flyTo(lat, lon, 16);
     });
 
@@ -1525,7 +1644,8 @@ function start3DMap() {
         const stopId = panel.dataset.stopId;
         const stopName = panel.dataset.stopName || '';
         if (stopId && stopName) {
-          UI.showDepartures(stopId, stopName);
+          const stopLetter = panel.dataset.stopLetter || '';
+          UI.showDepartures(stopId, stopName, stopLetter);
         }
       }
     });

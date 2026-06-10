@@ -2,15 +2,17 @@
   const UI = window.UI = window.UI || {};
   let departuresTimer2 = null;
 
-  UI.showDepartures = function(stopId, stopName) {
+  UI.showDepartures = function(stopId, stopName, stopLetter) {
     if (departuresTimer2) clearInterval(departuresTimer2);
     const panel = document.getElementById('departures-panel');
     panel.style.display = 'flex';
     panel.dataset.stopId = stopId;
     panel.dataset.stopName = stopName;
+    panel.dataset.stopLetter = stopLetter || '';
     delete panel.dataset.dirFilter;
     const list = document.getElementById('departures-list');
-    panel.querySelector('h3').innerHTML = '\u{1F68F} ' + stopName + ' <span class="live-badge">LIVE</span>';
+    const letterHtml = stopLetter ? '<span class="stop-letter">' + stopLetter + '</span>' : '';
+    panel.querySelector('h3').innerHTML = '\u{1F68F} ' + stopName + ' ' + letterHtml + ' <span class="live-badge">LIVE</span>';
     loadArrivals(stopId, list);
     departuresTimer2 = setInterval(async () => {
       if (panel.style.display !== 'none') await loadArrivals(stopId, list, true);

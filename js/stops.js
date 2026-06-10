@@ -9,7 +9,8 @@ const Stops = (() => {
       lon: s.lon,
       distance: s.distance,
       modes: s.modes || [],
-      lines: (s.lines || []).map(l => l.name).filter(Boolean)
+      lines: (s.lines || []).map(l => l.name).filter(Boolean),
+      stopLetter: s.stopLetter || (s.indicator ? s.indicator.replace(/[->\s]/g, '').toUpperCase() : '')
     })).sort((a, b) => a.distance - b.distance);
   }
 

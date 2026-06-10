@@ -139,9 +139,13 @@
   }
 
   function setupMapToggle() {
-    document.getElementById('map-fab').addEventListener('click', toggleMap);
-    document.getElementById('close-map-btn').addEventListener('click', toggleMap);
-    document.getElementById('map-toggle-btn').addEventListener('click', toggleMap);
+    const pinCheck = () => { if (window.UI && window.UI.isPinModeActive && window.UI.isPinModeActive()) { UI.clearMapPinMode(); return true; } return false; };
+    document.getElementById('map-fab').addEventListener('click', () => { if (!pinCheck()) toggleMap(); });
+    document.getElementById('close-map-btn').addEventListener('click', () => {
+      if (window.UI && window.UI.isPinModeActive && window.UI.isPinModeActive()) { UI.clearMapPinMode(); return; }
+      toggleMap();
+    });
+    document.getElementById('map-toggle-btn').addEventListener('click', () => { if (!pinCheck()) toggleMap(); });
   }
 
   function toggleMap() {
