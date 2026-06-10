@@ -1,0 +1,40 @@
+(function() {
+  const UI = window.UI = window.UI || {};
+  UI.showRouteStopList = function(stops, routeName, routeId, mode, fromTerminus, toTerminus) {
+    const el = document.getElementById('route-results');
+    if (!stops || !stops.length) {
+      el.innerHTML = '<div class="no-data">No stops found for this route</div>';
+      return;
+    }
+    mode = mode || 'bus';
+    const modeIcon = Stops.getModeIcon(mode);
+    const modeColor = Stops.getModeColor(mode);
+    const isNight = routeName.toUpperCase().startsWith('N');
+    const nightTag = isNight ? '<span class="night-badge">\u{1F319} Night Bus</span>' : '';
+    const terminiStr = fromTerminus && toTerminus ? fromTerminus + ' \u2192 ' + toTerminus : '';
+    const modeName = mode === 'bus' ? 'Bus' : mode.charAt(0).toUpperCase() + mode.slice(1);
+
+    el.innerHTML = '<div class="route-info-header">'
+      + '<span class="route-info-number" style="color:' + modeColor + '">' + modeIcon + ' ' + routeName + '</span>'
+      + nightTag
+      + '<span class="route-info-stops">' + stops.length + ' stops</span>'
+      + '</div>'
+      + (terminiStr ? '<div class="route-termini" style="color:' + modeColor + '">' + modeIcon + ' ' + modeName + ' \u00b7 ' + terminiStr + '</div>' : '')
+      + '<div class="route-stop-list">'
+      + stops.map((s, i) => {
+        return '<div class="route-stop-item" data-stop-id="' + (s.stopId || s.id) + '" data-lat="' + s.lat + '" data-lon="' + s.lon + '" data-stop-name="' + s.name + '">'
+          + '<span class="rs-index">' + (i + 1) + '</span>'
+          + '<span class="rs-dot" style="background:' + modeColor + '"></span>'
+          + '<span class="rs-name">' + s.name + '</span>'
+          + '</div>';
+      }).join('')
+      + '</div>';
+    el.querySelectorAll('.route-stop-item').forEach(item => {
+      item.addEventListener('click', () => {
+        UI.showDepartures(item.dataset.stopId, item.dataset.stopName);
+        MapView.flyTo(parseFloat(item.dataset.lat), parseFloat(item.dataset.lon));
+      });
+    });
+  };
+  window.UI = UI;
+})();

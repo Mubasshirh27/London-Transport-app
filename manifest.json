@@ -1,0 +1,16 @@
+{
+  "name": "London Transit",
+  "short_name": "LT",
+  "description": "Live London travel — journeys, departures, bike share, and service status",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1b1e",
+  "theme_color": "#12343b",
+  "categories": ["travel", "transport", "navigation"],
+  "icons": [
+    { "src": "./img/icon.svg", "type": "image/svg+xml", "sizes": "512x512", "purpose": "any" },
+    { "src": "./img/icon.svg", "type": "image/svg+xml", "sizes": "192x192", "purpose": "any" }
+  ]
+}
