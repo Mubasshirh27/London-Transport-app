@@ -419,12 +419,12 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 .bus-hint { font-size: 11px; color: var(--text2); padding: 8px 4px; text-align: center; }
 
 /* ── Slide-in Panels ── */
-#slide-panels { position: relative; z-index: 10; }
+#slide-panels { position: relative; z-index: 8000; }
 .slide-panel {
   position: fixed; right: 0; top: var(--header-h); bottom: 0;
   width: 380px; max-width: 85vw; background: var(--surface);
   border-left: 1px solid var(--border); box-shadow: -4px 0 20px rgba(0,0,0,.4);
-  display: flex; flex-direction: column; z-index: 1500;
+  display: flex; flex-direction: column; z-index: 8000;
   transform: translateX(0); transition: transform .25s cubic-bezier(.4,0,.2,1);
 }
 .panel-header {
