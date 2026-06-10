@@ -1,6 +1,12 @@
 const Api = (() => {
   const BASE = CONFIG.tflApiBase;
   const KEY = CONFIG.tflApiKey;
+  let rateLimitQueue = Promise.resolve();
+
+  function rateLimited(fn) {
+    rateLimitQueue = rateLimitQueue.then(() => fn()).then(r => new Promise(resolve => setTimeout(() => resolve(r), 200)));
+    return rateLimitQueue;
+  }
 
   async function fetchTfl(endpoint, params = {}) {
     params.app_key = KEY;
@@ -43,7 +49,7 @@ const Api = (() => {
   }
 
   async function getStopArrivals(stopId) {
-    return fetchTfl(`/StopPoint/${stopId}/Arrivals`);
+    return rateLimited(() => fetchTfl(`/StopPoint/${stopId}/Arrivals`));
   }
 
   async function getNearbyStops(lat, lon, radius) {
@@ -115,7 +121,7 @@ const Api = (() => {
   }
 
   async function getStopProperties(stopId) {
-    return fetchTfl(`/StopPoint/${stopId}`);
+    return rateLimited(() => fetchTfl(`/StopPoint/${stopId}`));
   }
 
   async function getMetaModes() {
