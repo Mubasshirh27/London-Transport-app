@@ -82,9 +82,9 @@ const MapView = (() => {
     return m;
   }
 
-  function addRoute(points, color, label) {
+  function addRoute(points, color, label, weight) {
     if (!points || points.length === 0) return;
-    const polyline = L.polyline(points, { color: color || '#0019a8', weight: 4, opacity: 0.8 }).addTo(map);
+    const polyline = L.polyline(points, { color: color || '#0019a8', weight: weight || 4, opacity: 0.8 }).addTo(map);
     routes.push(polyline);
     routeData.push({ points, color, label });
     if (label) {
@@ -124,8 +124,13 @@ const MapView = (() => {
   }
   function clearAll() { clearRoutes(); clearMarkers(); hideStopMarkers(); hideBikeMarkers(); hideRouteStopMarkers(); }
 
-  function onClick(cb) { map.on('click', (e) => cb(e.latlng.lat, e.latlng.lng)); }
-  function clearClick() { map.off('click'); }
+  let _clickHandler = null;
+  function onClick(cb) {
+    if (_clickHandler) map.off('click', _clickHandler);
+    _clickHandler = (e) => cb(e.latlng.lat, e.latlng.lng);
+    map.on('click', _clickHandler);
+  }
+  function clearClick() { if (_clickHandler) { map.off('click', _clickHandler); _clickHandler = null; } }
   function flyTo(lat, lon, zoom) {
     if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return;
     map.flyTo([lat, lon], zoom || 15, { duration: 0.6 });
@@ -168,6 +173,8 @@ const MapView = (() => {
     }
     (async () => {
       let departuresHtml = '';
+      const accData = await Stops.getStopAccessibility(stopId).catch(() => null);
+      const accBadge = accData && accData.stepFree ? ` <span class="acc-badge" title="${(accData.text || 'Step-free access')}">\u267F</span>` : '';
       try {
         const arrivals = await Stops.getArrivals(stopId);
         if (arrivals.length) {
@@ -194,7 +201,7 @@ const MapView = (() => {
         }
       } catch { departuresHtml = `<div style="font-size:10px;color:#888;padding:6px 0;text-align:center">Error loading departures</div>`; }
       const btnHtml = `<button class="stop-popup-btn" data-id="${stopId}" data-name="${stopName}" data-lat="${lat}" data-lon="${lon}">📋 View Full Timetable</button>`;
-      const finalHtml = `<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${stopName}</strong></div>${modeStr ? `<div class="stop-popup-modes">${modeStr} ${distance}</div>` : ''}${extraLine}${routeTags ? `<div class="stop-popup-routes">${routeTags}</div>` : ''}<div class="popup-departures-list">${departuresHtml}</div>${btnHtml}</div>`;
+      const finalHtml = `<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${stopName}</strong>${accBadge}</div>${modeStr ? `<div class="stop-popup-modes">${modeStr} ${distance}</div>` : ''}${extraLine}${routeTags ? `<div class="stop-popup-routes">${routeTags}</div>` : ''}<div class="popup-departures-list">${departuresHtml}</div>${btnHtml}</div>`;
       if (popup) popup.setContent(finalHtml);
       if (mlPopup) mlPopup.setHTML(finalHtml);
       setTimeout(() => {
@@ -227,6 +234,8 @@ const MapView = (() => {
       popupEl.innerHTML = `<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${s.name}</strong> <span class="stop-code">${s.id}</span></div><div class="stop-popup-loading"><div class="spinner"></div><span>Loading departures...</span></div></div>`;
       const popContent = popupEl.firstElementChild;
       (async () => {
+        const accData = await Stops.getStopAccessibility(s.id).catch(() => null);
+        const accBadge = accData && accData.stepFree ? ` <span class="acc-badge" title="${(accData.text || 'Step-free access')}">\u267F</span>` : '';
         try {
           const arr = await Stops.getArrivals(s.id);
           if (arr.length) {
@@ -250,17 +259,17 @@ const MapView = (() => {
             });
             if (arr.length > 8) h += `<div style="font-size:9px;color:#888;padding:2px 0">+${arr.length-8} more</div>`;
             h += `<button class="stop-popup-btn" style="margin-top:6px" data-sid="${s.id}" data-sname="${s.name}" data-slat="${s.lat}" data-slon="${s.lon}">📋 View Full Timetable</button>`;
-            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong> <span class="stop-code">${s.id}</span></div><div class="popup-departures-list">${h}</div>`;
+            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong>${accBadge} <span class="stop-code">${s.id}</span></div><div class="popup-departures-list">${h}</div>`;
             popContent.querySelector('.stop-popup-btn')?.addEventListener('click', (e) => {
               const b = e.currentTarget;
               map.closePopup();
               document.dispatchEvent(new CustomEvent('open-departures', { detail: { id: b.dataset.sid, name: b.dataset.sname, lat: +b.dataset.slat, lon: +b.dataset.slon } }));
             });
           } else {
-            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong> <span class="stop-code">${s.id}</span></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">No arrivals at this time</div>`;
+            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong>${accBadge} <span class="stop-code">${s.id}</span></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">No arrivals at this time</div>`;
           }
         } catch {
-          popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong> <span class="stop-code">${s.id}</span></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">Error loading departures</div>`;
+          popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong>${accBadge} <span class="stop-code">${s.id}</span></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">Error loading departures</div>`;
         }
       })();
       m.on('click', () => {

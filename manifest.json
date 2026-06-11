@@ -11,6 +11,8 @@
   "categories": ["travel", "transport", "navigation"],
   "icons": [
     { "src": "./img/icon.svg", "type": "image/svg+xml", "sizes": "512x512", "purpose": "any" },
-    { "src": "./img/icon.svg", "type": "image/svg+xml", "sizes": "192x192", "purpose": "any" }
+    { "src": "./img/icon.svg", "type": "image/svg+xml", "sizes": "192x192", "purpose": "any" },
+    { "src": "./img/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any maskable" },
+    { "src": "./img/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
   ]
 }

@@ -7,8 +7,9 @@ const Api = (() => {
   function rateLimited(fn) {
     if (rateLimitCount > 100) { rateLimitQueue = Promise.resolve(); rateLimitCount = 0; }
     rateLimitCount++;
-    rateLimitQueue = rateLimitQueue.then(() => fn()).then(r => new Promise(resolve => setTimeout(() => resolve(r), 200)));
-    return rateLimitQueue;
+    const result = rateLimitQueue.then(() => fn()).then(r => new Promise(resolve => setTimeout(() => resolve(r), 200)));
+    rateLimitQueue = result.catch(() => new Promise(resolve => setTimeout(resolve, 200)));
+    return result;
   }
 
   async function fetchTfl(endpoint, params = {}) {

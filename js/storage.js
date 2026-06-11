@@ -59,5 +59,22 @@ const Store = (() => {
   }
   function saveSettings(s) { set(KEYS.settings, s); }
 
-  return { getFavorites, saveFavorites, addFavorite, removeFavorite, isFavorite, clearFavorites, getRecent, addRecent, clearRecent, getSettings, saveSettings };
+  const LINES_KEY = 'lt_savedLines';
+
+  function getSavedLines() { return get(LINES_KEY) || []; }
+
+  function saveSavedLines(lines) { set(LINES_KEY, lines); }
+
+  function toggleSavedLine(line) {
+    const lines = getSavedLines();
+    const idx = lines.findIndex(l => l.id === line.id);
+    if (idx >= 0) { lines.splice(idx, 1); saveSavedLines(lines); return false; }
+    lines.unshift({ id: line.id, name: line.name, mode: line.mode, savedAt: Date.now() });
+    saveSavedLines(lines.slice(0, 20));
+    return true;
+  }
+
+  function isLineSaved(lineId) { return getSavedLines().some(l => l.id === lineId); }
+
+  return { getFavorites, saveFavorites, addFavorite, removeFavorite, isFavorite, clearFavorites, getRecent, addRecent, clearRecent, getSettings, saveSettings, getSavedLines, saveSavedLines, toggleSavedLine, isLineSaved };
 })();

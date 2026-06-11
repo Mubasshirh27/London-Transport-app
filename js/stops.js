@@ -84,7 +84,8 @@ const Stops = (() => {
       for (const route of tt.timetable.routes) {
         if (!route.schedules) continue;
         for (const sched of route.schedules) {
-          if (!sched.knownJourneys || !sched.knownJourneys.length) continue;
+          const kj = sched.knownJourneys || sched.plannedJourneys;
+          if (!kj || !kj.length) continue;
           const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
           const schedFrom = sched.firstDay ? new Date(sched.firstDay) : null;
           const schedTo = sched.lastDay ? new Date(sched.lastDay) : null;
@@ -95,9 +96,9 @@ const Stops = (() => {
           if (dow === 0 && !name.includes('sunday')) continue;
           if (dow === 6 && !name.includes('saturday')) continue;
           if (dow > 0 && dow < 6 && (name.includes('saturday') || name.includes('sunday')) && !name.includes('friday') && !name.includes('weekday') && !name.includes('monday')) continue;
-          for (const kj of sched.knownJourneys) {
-            const depH = parseInt(kj.hour, 10);
-            const depM = parseInt(kj.minute, 10);
+          for (const j of kj) {
+            const depH = parseInt(j.hour, 10);
+            const depM = parseInt(j.minute, 10);
             if (isNaN(depH) || isNaN(depM)) continue;
             const depTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), depH, depM);
             const depMs = depTime.getTime();
@@ -153,7 +154,7 @@ const Stops = (() => {
       mode: a.modeName,
       destination: dest,
       expected: a.expectedArrival,
-      timeToStation: Math.round((new Date(a.expectedArrival) - now) / 60000),
+      timeToStation: Math.max(0, Math.round(((a.expectedArrival ? new Date(a.expectedArrival) : now) - now) / 60000)),
       vehicleId: a.vehicleId,
       platformName: a.platformName,
       direction: a.direction,
@@ -228,5 +229,24 @@ const Stops = (() => {
     return colors[mode] || '#333';
   }
 
-  return { getNearby, getArrivals, groupArrivals, getModeIcon, getModeColor, resolveStopIds };
+  const _accCache = new Map();
+  const _accTTL = 10 * 60 * 1000;
+
+  async function getStopAccessibility(stopId) {
+    if (!stopId) return null;
+    const cached = _accCache.get(stopId);
+    if (cached && Date.now() - cached.ts < _accTTL) return cached.data;
+    try {
+      const data = await Api.getStopProperties(stopId);
+      const result = {
+        stepFree: !!(data.accessibilitySummary && data.accessibilitySummary.toLowerCase().includes('step-free')),
+        hearingLoop: !!(data.accessibilitySummary && data.accessibilitySummary.toLowerCase().includes('hearing')),
+        text: data.accessibilitySummary || ''
+      };
+      _accCache.set(stopId, { data: result, ts: Date.now() });
+      return result;
+    } catch { return null; }
+  }
+
+  return { getNearby, getArrivals, groupArrivals, getModeIcon, getModeColor, resolveStopIds, getStopAccessibility };
 })();

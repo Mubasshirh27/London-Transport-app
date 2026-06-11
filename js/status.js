@@ -2,6 +2,10 @@ const Status = (() => {
   let cached = null;
   let cacheTime = 0;
 
+  function esc(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
   function severityCls(desc) {
     const d = (desc || '').toLowerCase();
     if (d.includes('good') || d === 'bus service') return 'good';
@@ -84,13 +88,13 @@ const Status = (() => {
           <span class="accordion-arrow">▶</span>
         </div>
         <div class="status-accordion-body" id="${id}">
-          ${filtered.map(l => `
+              ${filtered.map(l => `
             <div class="status-line">
               <span class="status-bullet" style="background:${l.color}"></span>
-              <span class="status-name">${l.name}</span>
-              <span class="status-text ${l.statusCls}">${l.statusText}</span>
+              <span class="status-name">${esc(l.name)}</span>
+              <span class="status-text ${l.statusCls}">${esc(l.statusText)}</span>
             </div>
-            ${l.reason ? `<div class="status-reason">${l.reason}</div>` : ''}
+            ${l.reason ? `<div class="status-reason">${esc(l.reason)}</div>` : ''}
           `).join('')}
         </div>
       </div>`;
@@ -136,10 +140,10 @@ const Status = (() => {
               ${busLines.map(l => `
                 <div class="status-line" data-bus="${l.name.toLowerCase()}">
                   <span class="status-bullet" style="background:${l.color}"></span>
-                  <span class="status-name">${l.name}</span>
-                  <span class="status-text ${l.statusCls}">${l.statusText}</span>
+                  <span class="status-name">${esc(l.name)}</span>
+                  <span class="status-text ${l.statusCls}">${esc(l.statusText)}</span>
                 </div>
-                ${l.reason ? `<div class="status-reason" data-bus="${l.name.toLowerCase()}">${l.reason}</div>` : ''}
+                ${l.reason ? `<div class="status-reason" data-bus="${l.name.toLowerCase()}">${esc(l.reason)}</div>` : ''}
               `).join('')}
             </div>
           </div>
@@ -161,12 +165,12 @@ const Status = (() => {
           ${disruptions.map(d => `
             <div class="disruption-item">
               <div class="disruption-header">
-                <span class="disruption-type ${(d.category||'').toLowerCase()}">${d.category || 'Alert'}</span>
-                <span class="disruption-summary">${d.summary || d.description || ''}</span>
+                <span class="disruption-type ${(d.category||'').toLowerCase()}">${esc(d.category || 'Alert')}</span>
+                <span class="disruption-summary">${esc(d.summary || d.description || '')}</span>
               </div>
-              ${d.description ? `<div class="disruption-desc">${d.description}</div>` : ''}
-              ${d.closureText ? `<div class="disruption-closure">${d.closureText}</div>` : ''}
-              ${d.affectedRoutes && d.affectedRoutes.length ? `<div class="disruption-routes">Affected: ${d.affectedRoutes.map(r => r.name).filter(Boolean).join(', ')}</div>` : ''}
+              ${d.description ? `<div class="disruption-desc">${esc(d.description)}</div>` : ''}
+              ${d.closureText ? `<div class="disruption-closure">${esc(d.closureText)}</div>` : ''}
+              ${d.affectedRoutes && d.affectedRoutes.length ? `<div class="disruption-routes">Affected: ${d.affectedRoutes.map(r => esc(r.name)).filter(Boolean).join(', ')}</div>` : ''}
             </div>
           `).join('')}
         </div>

@@ -1,23 +1,48 @@
 (function() {
   const UI = window.UI = window.UI || {};
 
-  function getDayName() {
-    return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
-  }
+  function getDateSchedule(schedules, date) {
+    const day = date.getDay(); // 0=Sun, 6=Sat
+    const isWeekend = day === 0 || day === 6;
+    const variantMap = [
+      ['sunday', 'sun'],
+      ['monday', 'mon'],
+      ['tuesday', 'tue', 'tues'],
+      ['wednesday', 'wed'],
+      ['thursday', 'thu', 'thur', 'thurs'],
+      ['friday', 'fri'],
+      ['saturday', 'sat']
+    ];
+    const targetVariants = variantMap[day];
+    const weekdayPatterns = ['monday to friday', 'monday-friday', 'mon-fri', 'weekday', 'mon to fri', 'monday - friday'];
+    // All weekday day-name references
+    const weekdayRefs = variantMap.slice(1, 6).flat();
+    // All weekend day-name references
+    const weekendRefs = [].concat(variantMap[0], variantMap[6]);
 
-  function getTodaysSchedule(schedules) {
-    const day = getDayName();
-    const dayLower = day.toLowerCase();
+    // Pass 1: Exact day match (e.g. "Saturday" for Sat, "Monday to Friday" for Tue)
     for (const s of schedules) {
       const name = (s.name || '').toLowerCase().replace(/\s+/g, ' ').trim();
-      if (day === 'Saturday' || day === 'Sunday') {
-        if (name.includes(dayLower)) return s;
-      }
-      if (name.includes('monday to friday') || name.includes('monday-friday') || name.includes('mon-fri') || name.includes('weekday') || name.includes('mon to fri')) return s;
+      if (targetVariants.some(v => name.includes(v))) return s;
     }
-    if (day === 'Saturday') return schedules.find(s => (s.name || '').toLowerCase().includes('saturday')) || schedules[0];
-    if (day === 'Sunday') return schedules.find(s => (s.name || '').toLowerCase().includes('sunday')) || schedules[0];
-    return schedules[0];
+
+    // Pass 2: Day-type match — weekday pattern on weekdays, weekend ref on weekends
+    for (const s of schedules) {
+      const name = (s.name || '').toLowerCase();
+      if (isWeekend && (weekendRefs.some(v => name.includes(v)))) return s;
+      if (!isWeekend && weekdayPatterns.some(p => name.includes(p))) return s;
+    }
+
+    // Pass 3: Generic schedule that doesn't reference the opposite day-type
+    for (const s of schedules) {
+      const name = (s.name || '').toLowerCase();
+      const hasWeekday = weekdayRefs.some(v => name.includes(v)) || weekdayPatterns.some(p => name.includes(p));
+      const hasWeekend = weekendRefs.some(v => name.includes(v));
+      if (isWeekend && !hasWeekday) return s;  // weekend-safe: no weekday refs
+      if (!isWeekend && !hasWeekend) return s; // weekday-safe: no weekend refs
+    }
+
+    return null; // No appropriate schedule for this day type
   }
 
   function generateFromPeriods(periods) {
@@ -48,7 +73,7 @@
 
   function extractJourneyTimes(schedule) {
     if (!schedule) return [];
-    const kj = schedule.knownJourneys;
+    const kj = schedule.knownJourneys || schedule.plannedJourneys;
     if (kj && kj.length) {
       return kj.map(j => {
         const h = parseInt(j.hour, 10);
@@ -64,7 +89,7 @@
     return [];
   }
 
-  function parseTimetableData(data) {
+  function parseTimetableData(data, date) {
     if (!data || !data.timetable) {
       console.log('[Timetable] No timetable field', data ? Object.keys(data) : 'null');
       return { schedules: [], direction: data ? data.direction || '' : '' };
@@ -72,18 +97,31 @@
     const tt = data.timetable;
     const direction = data.direction || '';
     let schedules = [];
-    if (tt.schedules && tt.schedules.length) {
+
+    if (tt.routes && tt.routes.length) {
+      // TfL returns: timetable.routes[].schedules[]
+      tt.routes.forEach(route => {
+        if (!route.schedules || !route.schedules.length) return;
+        const matched = getDateSchedule(route.schedules, date || new Date());
+        if (matched) {
+          const journeys = extractJourneyTimes(matched);
+          schedules.push({
+            name: matched.name,
+            journeys: journeys,
+            periods: matched.periods || [],
+            direction: route.direction || direction
+          });
+        }
+      });
+    } else if (tt.schedules && tt.schedules.length) {
       console.log('[Timetable] Schedules:', tt.schedules.map(s => s.name + ' (kj:' + (s.knownJourneys ? s.knownJourneys.length : 0) + ' per:' + (s.periods ? s.periods.length : 0) + ')'));
-      const todaySchedule = getTodaysSchedule(tt.schedules);
-      if (todaySchedule) {
-        const journeys = extractJourneyTimes(todaySchedule);
-        console.log('[Timetable] Using schedule:', todaySchedule.name, 'journeys:', journeys.length);
-        schedules.push({ name: todaySchedule.name, journeys, periods: todaySchedule.periods || [] });
+      const matched = getDateSchedule(tt.schedules, date || new Date());
+      if (matched) {
+        const journeys = extractJourneyTimes(matched);
+        console.log('[Timetable] Using schedule:', matched.name, 'for date', (date || new Date()).toDateString(), 'journeys:', journeys.length);
+        schedules.push({ name: matched.name, journeys, periods: matched.periods || [], direction: direction });
       } else {
-        console.log('[Timetable] No schedule matched today, using first');
-        const first = tt.schedules[0];
-        const journeys = extractJourneyTimes(first);
-        schedules.push({ name: first.name, journeys, periods: first.periods || [] });
+        console.log('[Timetable] No schedule matched for this day type');
       }
     } else {
       console.log('[Timetable] No schedules array');
@@ -99,9 +137,13 @@
         try {
           console.log('[Timetable] Trying stopId:', sid, 'line:', lineId, 'dir:', dir);
           const data = await Api.getLineTimetable(lineId, sid, dir);
-          if (data && data.timetable && data.timetable.schedules && data.timetable.schedules.length) {
-            console.log('[Timetable] Got', data.timetable.schedules.length, 'schedules from', sid, 'dir:', dir);
-            results.push(data);
+          if (data && data.timetable) {
+            const hasRoutes = data.timetable.routes && data.timetable.routes.length && data.timetable.routes.some(r => r.schedules && r.schedules.length);
+            const hasSchedules = data.timetable.schedules && data.timetable.schedules.length;
+            if (hasRoutes || hasSchedules) {
+              console.log('[Timetable] Got timetable data from', sid, 'dir:', dir);
+              results.push(data);
+            }
           }
         } catch (e) {
           console.log('[Timetable] Failed:', sid, 'dir:', dir, '-', e.message);
@@ -137,40 +179,92 @@
     return journeys;
   }
 
-  UI.showRouteTimetable = async function(stopId, stopName, lineId, directionFilter) {
+  let _ttCache = null; // { timetableResponses, arrivals, stopId, stopName, lineId, directionFilter, resolvedStopIds }
+
+  function formatDate(date) {
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return dayNames[date.getDay()] + ', ' + date.getDate() + ' ' + monthNames[date.getMonth()] + ' ' + date.getFullYear();
+  }
+
+  function formatDateISO(date) {
+    return date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+  }
+
+  async function checkLineDisruption(lineId) {
+    try {
+      const statuses = await Status.fetchAll();
+      if (!Array.isArray(statuses)) return null;
+      const line = statuses.find(s => s.id === lineId || s.name === lineId);
+      if (!line || line.statusCls === 'good') return null;
+      return { text: line.reason || line.statusText, cls: line.statusCls };
+    } catch { return null; }
+  }
+
+  async function checkPlannedWorks(lineId, date) {
+    try {
+      const disruptions = await Status.fetchDisruptions();
+      if (!Array.isArray(disruptions) || !disruptions.length) return [];
+      const dateMs = date.getTime();
+      return disruptions.filter(d => {
+        if (!d.closureText) return false;
+        const aff = d.affectedRoutes || [];
+        const matchesLine = aff.some(r => (r.name || '').toLowerCase() === lineId.toLowerCase());
+        if (!matchesLine) return false;
+        const from = d.fromDate ? new Date(d.fromDate).getTime() : null;
+        const to = d.toDate ? new Date(d.toDate).getTime() : null;
+        if (from && to) return dateMs >= from && dateMs <= to;
+        if (from) return dateMs >= from;
+        if (to) return dateMs <= to;
+        return true;
+      });
+    } catch { return []; }
+  }
+
+  function getFreshnessLabel() {
+    if (!_ttCache || !_ttCache.fetchedAt) return { text: 'Unknown', cls: 'info' };
+    const elapsed = Date.now() - _ttCache.fetchedAt;
+    if (elapsed < 60000) return { text: 'Live', cls: 'good' };
+    if (elapsed < 3600000) return { text: Math.round(elapsed / 60000) + ' min ago', cls: 'good' };
+    if (elapsed < 86400000) return { text: Math.round(elapsed / 3600000) + 'h ago', cls: 'minor' };
+    return { text: '>' + Math.round(elapsed / 86400000) + 'd old', cls: 'severe' };
+  }
+
+  function renderTimetableContent(stopId, stopName, lineId, directionFilter, date) {
     const panel = document.getElementById('departures-panel');
-    panel.style.display = 'flex';
-    panel.dataset.stopName = stopName;
     const list = document.getElementById('departures-list');
-    list.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    const targetDay = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][date.getDay()];
 
-    // Fetch arrivals first to get display name
-    let arrivals = [];
-    try { arrivals = await Stops.getArrivals(stopId); } catch (e) { console.log('[Timetable] Arrivals error:', e); }
-    const displayName = arrivals.length ? (arrivals.find(a => a.lineId === lineId || a.line === lineId)?.line || lineId) : lineId;
-    const headerSuffix = directionFilter ? ' (' + directionFilter + ')' : '';
-    panel.querySelector('h3').innerHTML = '📋 ' + displayName + headerSuffix + ' Timetable \u00b7 ' + stopName + ' <span class="stop-code">' + stopId + '</span>';
+    if (!_ttCache) { UI.showRouteTimetable(stopId, stopName, lineId, directionFilter); return; }
 
-    const resolvedStopIds = await Stops.resolveStopIds(stopId).catch(() => [stopId]);
-    console.log('[Timetable] Resolved stop IDs:', resolvedStopIds);
-
+    // Re-parse with new date — merge by route-level direction to avoid losing
+    // schedules when multiple API responses share the same data.direction
     let allSchedules = [];
-    const timetableResponses = await fetchAllTimetables(resolvedStopIds, lineId);
-    timetableResponses.forEach(data => {
-      const parsed = parseTimetableData(data);
-      if (parsed.schedules.length && parsed.schedules[0].journeys.length) {
-        const dirKey = parsed.direction || 'default';
-        const existing = allSchedules.find(s => s.direction === dirKey);
-        if (!existing) allSchedules.push(parsed);
-      }
+    const dirMap = {};
+    _ttCache.timetableResponses.forEach(data => {
+      const parsed = parseTimetableData(data, date);
+      if (!parsed.schedules.length) return;
+      parsed.schedules.forEach(s => {
+        if (!s.journeys.length) return;
+        const dirKey = (s.direction || parsed.direction || 'default').toLowerCase();
+        if (!dirMap[dirKey]) {
+          dirMap[dirKey] = { direction: s.direction || parsed.direction || 'default', schedules: [] };
+          allSchedules.push(dirMap[dirKey]);
+        }
+        dirMap[dirKey].schedules.push(s);
+      });
     });
 
-    // Filter live arrivals by line + direction
-    let routeArrivals = arrivals.filter(a => a.lineId === lineId || a.line === lineId);
-    if (directionFilter) {
-      routeArrivals = routeArrivals.filter(a => a.dirLabel === directionFilter);
+    // Filter live arrivals by line + direction (only relevant for today)
+    let routeArrivals = [];
+    const isTodayDate = formatDateISO(date) === formatDateISO(new Date());
+    if (isTodayDate) {
+      routeArrivals = (_ttCache.arrivals || []).filter(a => a.lineId === lineId || a.line === lineId);
+      if (directionFilter) {
+        routeArrivals = routeArrivals.filter(a => a.dirLabel === directionFilter);
+      }
+      routeArrivals = routeArrivals.slice(0, 10);
     }
-    routeArrivals = routeArrivals.slice(0, 10);
 
     let liveHtml = '';
     if (routeArrivals.length) {
@@ -186,15 +280,11 @@
     let filteredSchedules = allSchedules;
     if (directionFilter) {
       const dirLower = directionFilter.toLowerCase();
+      const compassDirs = ['eastbound', 'westbound', 'northbound', 'southbound'];
       filteredSchedules = allSchedules.filter(tt => {
-        const schedName = (tt.schedules[0]?.name || '').toLowerCase();
-        if (schedName.includes(dirLower)) return true;
         const apiDir = (tt.direction || '').toLowerCase();
-        // Map inbound/outbound to common bound terms
-        if (apiDir === 'inbound' && ['eastbound', 'westbound', 'northbound', 'southbound'].includes(dirLower)) {
-          // Inbound could match any — don't filter out
-          return true;
-        }
+        if (apiDir === dirLower) return true;
+        if (compassDirs.includes(dirLower) && compassDirs.includes(apiDir)) return true;
         return false;
       });
     }
@@ -207,47 +297,175 @@
       }
     }
 
-    if (!liveHtml && !filteredSchedules.length) {
-      list.innerHTML = '<div class="no-data">No timetable data available for route ' + displayName + ' at this stop</div>' +
-        '<div style="padding:8px 12px;text-align:center"><button class="btn-secondary tt-back-btn">\u2190 Back to Live</button></div>';
+    // Date bar
+    const isToday = formatDateISO(date) === formatDateISO(new Date());
+    const isTomorrow = formatDateISO(date) === formatDateISO(new Date(Date.now() + 86400000));
+    let dateBarHtml = '<div class="tt-date-bar">' +
+      '<button class="time-btn tt-date-prev" data-date="' + formatDateISO(new Date(date.getTime() - 86400000)) + '">◀</button>' +
+      '<span class="tt-date-display">' + formatDate(date) + '</span>' +
+      '<button class="time-btn tt-date-next" data-date="' + formatDateISO(new Date(date.getTime() + 86400000)) + '">▶</button>' +
+      '<button class="time-btn' + (isToday ? ' active' : '') + ' tt-date-today">Today</button>' +
+      '<button class="time-btn' + (isTomorrow ? ' active' : '') + ' tt-date-tomorrow">Tomorrow</button>' +
+      '</div>';
+
+    // Direction arrow helper
+    function dirArrow(dir) {
+      const d = (dir || '').toLowerCase();
+      if (d.includes('east') || d === 'inbound') return '\u25b6';
+      if (d.includes('west') || d === 'outbound') return '\u25c0';
+      if (d.includes('north')) return '\u25b2';
+      if (d.includes('south')) return '\u25bc';
+      return '\u25b6';
+    }
+
+    // Disruption check
+    let disruptionHtml = '';
+    checkLineDisruption(lineId).then(d => {
+      const banner = document.getElementById('tt-disruption-banner');
+      if (!banner) return;
+      let html = '';
+      if (d) {
+        html += '<div><span class="tt-disruption-icon">\u26a0\ufe0f</span> ' + d.text + '</div>';
+      }
+      if (!isTodayDate) {
+        checkPlannedWorks(lineId, date).then(works => {
+          if (works && works.length) {
+            const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            works.forEach(w => {
+              const dateRange = w.fromDate && w.toDate
+                ? new Date(w.fromDate).toLocaleDateString('en',{month:'short',day:'numeric'}) + '-' + new Date(w.toDate).toLocaleDateString('en',{month:'short',day:'numeric'})
+                : w.fromDate ? new Date(w.fromDate).toLocaleDateString('en',{month:'short',day:'numeric'}) : '';
+              html += '<div style="margin-top:' + (d ? 4 : 0) + 'px"><span class="tt-disruption-icon">\u26a0\ufe0f</span> <strong>Planned works' + (dateRange ? ' ' + dateRange : '') + '</strong> &mdash; ' + esc(w.closureText) + '</div>';
+            });
+            banner.innerHTML = html;
+            banner.className = 'tt-disruption-banner tt-ds-minor';
+            banner.style.display = '';
+          } else if (!d) {
+            banner.style.display = 'none';
+          }
+        }).catch(() => {});
+      } else if (d) {
+        banner.innerHTML = html;
+        banner.className = 'tt-disruption-banner tt-ds-' + d.cls;
+        banner.style.display = '';
+      }
+    });
+
+    // Freshness badge
+    const freshness = getFreshnessLabel();
+    const freshnessHtml = '<span class="tt-freshness-badge tt-fb-' + freshness.cls + '">\u25c9 ' + freshness.text + '</span>';
+
+    // Schedule grid
+    let schedHtml = '';
+    if (filteredSchedules.length) {
+      filteredSchedules.forEach(tt => {
+        // Group schedules within this direction block by their route-level direction
+        const dirGroups = {};
+        tt.schedules.forEach(s => {
+          if (!s.journeys.length) return;
+          const routeDir = s.direction || tt.direction || 'default';
+          if (!dirGroups[routeDir]) dirGroups[routeDir] = [];
+          dirGroups[routeDir].push(s);
+        });
+        Object.entries(dirGroups).forEach(([routeDir, scheds]) => {
+          const arrow = dirArrow(routeDir);
+          const dirLabel = routeDir.charAt(0).toUpperCase() + routeDir.slice(1);
+          schedHtml += '<div class="tt-section"><div class="tt-header">' + arrow + ' ' + dirLabel + ' &middot; ' + targetDay + '</div><div class="tt-grid">';
+          scheds.forEach(s => {
+            s.journeys.forEach(j => {
+              schedHtml += '<div class="tt-entry" data-time="' + j.timeStr + '">' + j.timeStr + '</div>';
+            });
+          });
+          schedHtml += '</div></div>';
+        });
+      });
+    }
+
+    if (!liveHtml && !schedHtml) {
+      list.innerHTML = dateBarHtml + '<div class="no-data">No timetable data for ' + formatDate(date) + '</div>' +
+        '<div class="tt-actions"><button class="btn-secondary tt-back-btn">\u2190 Back to Live</button></div>';
       setTimeout(() => { const pb = panel.querySelector('.panel-body'); if (pb) pb.scrollTop = 0; }, 50);
       return;
     }
 
-    let html = liveHtml;
-    if (filteredSchedules.length) {
-      filteredSchedules.forEach(tt => {
-        const schedName = tt.schedules.length ? tt.schedules[0].name : '';
-        let dirLabel = '';
-        if (schedName) {
-          const dirMatch = schedName.match(/[-–—]\s*(Westbound|Eastbound|Northbound|Southbound|Inner Rail|Outer Rail)/i);
-          if (dirMatch) dirLabel = ' (' + dirMatch[1] + ')';
-        }
-        if (!dirLabel && tt.direction) {
-          dirLabel = ' (' + tt.direction.charAt(0).toUpperCase() + tt.direction.slice(1) + ')';
-        }
-        html += '<div class="tt-section"><div class="tt-header">\u25a0 Scheduled Timetable' + dirLabel + '</div><div class="tt-grid">';
-        tt.schedules.forEach(s => {
-          if (s.journeys.length) {
-            html += '<div class="tt-day-label">' + s.name + '</div>';
-            s.journeys.forEach(j => {
-              html += '<div class="tt-entry" data-time="' + j.timeStr + '">' + j.timeStr + '</div>';
-            });
-          }
-        });
-        html += '</div></div>';
-      });
-    }
+    // Route map bar
+    const ls = _ttCache && _ttCache.lineStops;
+    const dn = _ttCache && _ttCache.displayName;
+    const mapBarHtml = ls && Array.isArray(ls) && ls.length > 2
+      ? '<div class="tt-map-bar"><span class="tt-map-bar-text">\u{1F4CD} ' + (dn || lineId) + ' (' + ls.length + ' stops)</span><button class="tt-map-btn" data-stop="' + stopId + '" data-line="' + lineId + '">\u{1F5FA}\ufe0f Show on map</button></div>'
+      : '';
 
-    html += '<div class="tt-actions"><button class="btn-secondary tt-back-btn">\u2190 Back to Live</button></div>';
+    let html = dateBarHtml +
+      '<div id="tt-disruption-banner" class="tt-disruption-banner" style="' + (freshness.cls !== 'severe' ? 'display:none' : '') + '"></div>' +
+      '<div class="tt-info-line">' + freshnessHtml + ' <span class="tt-day-type">' + targetDay + '</span></div>' +
+      mapBarHtml +
+      liveHtml +
+      schedHtml +
+      '<div class="tt-actions"><button class="btn-secondary tt-back-btn">\u2190 Back to Live</button></div>';
+
     list.innerHTML = html;
     setTimeout(() => { const pb = panel.querySelector('.panel-body'); if (pb) pb.scrollTop = 0; }, 50);
-  };
+  }
 
-  UI.showStopTimetable = async function(stopId, stopName) {
+  UI.showRouteTimetable = async function(stopId, stopName, lineId, directionFilter, date) {
+    if (UI._clearDeparturesTimer) UI._clearDeparturesTimer();
     const panel = document.getElementById('departures-panel');
     panel.style.display = 'flex';
     panel.dataset.stopName = stopName;
+    panel.dataset.stopId = stopId;
+    const list = document.getElementById('departures-list');
+    list.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+    if (!date) date = new Date();
+
+    // Fetch arrivals first to get display name
+    let arrivals = [];
+    try { arrivals = await Stops.getArrivals(stopId); } catch (e) { console.log('[Timetable] Arrivals error:', e); }
+    const displayName = arrivals.length ? (arrivals.find(a => a.lineId === lineId || a.line === lineId)?.line || lineId) : lineId;
+    const headerSuffix = directionFilter ? ' (' + directionFilter + ')' : '';
+    const isLineSaved = typeof Store !== 'undefined' && Store.isLineSaved(lineId);
+    const saveBtn = isLineSaved
+      ? '<button class="line-save-btn saved" data-line="' + lineId + '" data-name="' + displayName + '" data-mode="' + (arrivals.length ? arrivals[0]?.mode || 'tube' : 'tube') + '" title="Remove from My Lines">\u2605</button>'
+      : '<button class="line-save-btn" data-line="' + lineId + '" data-name="' + displayName + '" data-mode="' + (arrivals.length ? arrivals[0]?.mode || 'tube' : 'tube') + '" title="Save to My Lines">\u2606</button>';
+    panel.querySelector('h3').innerHTML = saveBtn + ' 📋 ' + displayName + headerSuffix + ' Timetable \u00b7 ' + stopName + ' <span class="stop-code">' + stopId + '</span>';
+
+    const resolvedStopIds = await Stops.resolveStopIds(stopId).catch(() => [stopId]);
+    console.log('[Timetable] Resolved stop IDs:', resolvedStopIds);
+
+    const timetableResponses = await fetchAllTimetables(resolvedStopIds, lineId);
+
+    // Fetch line stops for route map
+    let lineStops = null;
+    try { lineStops = await Api.getLineStopPoints(lineId); } catch {}
+
+    // Cache for date bar navigation
+    _ttCache = {
+      timetableResponses,
+      arrivals,
+      stopId,
+      stopName,
+      lineId,
+      directionFilter,
+      resolvedStopIds,
+      lineStops,
+      displayName,
+      fetchedAt: Date.now()
+    };
+
+    // Check disruption in background
+    checkLineDisruption(lineId).then(d => {
+      _ttCache._disruption = d;
+    });
+
+    renderTimetableContent(stopId, stopName, lineId, directionFilter, date);
+  };
+
+  UI.showStopTimetable = async function(stopId, stopName) {
+    if (UI._clearDeparturesTimer) UI._clearDeparturesTimer();
+    const panel = document.getElementById('departures-panel');
+    panel.style.display = 'flex';
+    panel.dataset.stopName = stopName;
+    panel.dataset.stopId = stopId;
     const list = document.getElementById('departures-list');
     list.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
     panel.querySelector('h3').innerHTML = '📋 ' + stopName + ' Timetable <span class="stop-code">' + stopId + '</span>';
@@ -286,5 +504,64 @@
     setTimeout(() => { const pb = panel.querySelector('.panel-body'); if (pb) pb.scrollTop = 0; }, 50);
   };
 
+  UI.changeTimetableDate = function(date) {
+    if (!_ttCache) return;
+    UI.showRouteTimetable(_ttCache.stopId, _ttCache.stopName, _ttCache.lineId, _ttCache.directionFilter, date);
+  };
+
   window.UI = UI;
 })();
+
+// Line save button handler
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.line-save-btn');
+  if (btn) {
+    e.preventDefault();
+    const lineId = btn.dataset.line;
+    const name = btn.dataset.name;
+    const mode = btn.dataset.mode || 'tube';
+    if (typeof Store === 'undefined') return;
+    const saved = Store.toggleSavedLine({ id: lineId, name: name, mode: mode });
+    btn.classList.toggle('saved', saved);
+    btn.title = saved ? 'Remove from My Lines' : 'Save to My Lines';
+    btn.textContent = saved ? '\u2605' : '\u2606';
+    if (typeof UI !== 'undefined' && UI.loadStatus) UI.loadStatus();
+    return;
+  }
+  const mapBtn = e.target.closest('.tt-map-btn');
+  if (mapBtn) {
+    e.preventDefault();
+    const lineId = mapBtn.dataset.line;
+    const rawStops = _ttCache && _ttCache.lineStops;
+    if (!rawStops || !Array.isArray(rawStops) || rawStops.length < 2) return;
+    const valid = rawStops.filter(s => s.lat != null && s.lon != null && !isNaN(s.lat) && !isNaN(s.lon));
+    if (valid.length < 2) return;
+    // Map TfL commonName → name for showRouteStopMarkers
+    const mapped = valid.map(s => ({
+      lat: s.lat, lon: s.lon,
+      name: s.commonName || s.name || '',
+      id: s.id || '',
+      stopLetter: s.stopLetter || ''
+    }));
+    const coords = mapped.map(s => [s.lat, s.lon]);
+    const modeVal = (rawStops[0] && rawStops[0].modes && rawStops[0].modes[0]) || 'tube';
+    const lineColor = Stops.getModeColor(modeVal);
+    MapView.clearAll();
+    MapView.addRoute(coords, lineColor, lineId);
+    MapView.showRouteStopMarkers(mapped, lineColor);
+    MapView.fitBounds([coords]);
+    const overlay = document.getElementById('map-overlay');
+    if (overlay) {
+      if (overlay.classList.contains('floating')) {
+        overlay.classList.remove('popout');
+        overlay.style.left = ''; overlay.style.top = ''; overlay.style.bottom = ''; overlay.style.right = ''; overlay.style.width = ''; overlay.style.height = '';
+      } else if (!overlay.classList.contains('open')) {
+        overlay.classList.add('open');
+        const toggle = document.getElementById('map-toggle-btn');
+        if (toggle) toggle.innerHTML = '<span class="ic" data-ic="close"></span> Close';
+        document.body.style.overflow = 'hidden';
+      }
+      setTimeout(() => { const m = MapView.getMap && MapView.getMap(); if (m && m.invalidateSize) m.invalidateSize(); }, 100);
+    }
+  }
+});

@@ -9,7 +9,6 @@
   let activeZoom = null;
   let bikeLocation = null;
   let bikePinTarget = null;
-  let pinModeActive = false;
 
   document.addEventListener('DOMContentLoaded', async () => {
     UI.init();
@@ -60,7 +59,6 @@
         const overlay = document.getElementById('map-overlay');
         if (overlay.classList.contains('open')) {
           overlay.classList.remove('open');
-          document.getElementById('map-fab').innerHTML = '<span class="ic" data-ic="map"></span>';
           document.getElementById('map-toggle-btn').innerHTML = '<span class="ic" data-ic="map"></span> Map';
           document.body.style.overflow = '';
         }
@@ -69,51 +67,9 @@
           const input = target === 'from' ? document.getElementById('from-input') : document.getElementById('to-input');
           if (input) { input.focus(); input.select(); }
         }, 350);
-return;
-    }
-
-    // --- Pin Mode UI helpers ---
-    UI.setMapPinMode = function(mode) {
-      pinModeActive = true;
-      const overlay = document.getElementById('map-overlay');
-      const clickInfo = document.getElementById('map-click-info');
-      const clickInfoBike = document.getElementById('map-click-info-bike');
-      const label = document.getElementById('click-target-label');
-      overlay.classList.remove('hidden');
-      overlay.classList.add('open');
-      document.getElementById('map-fab').innerHTML = '<span class="ic" data-ic="close"></span>';
-      clickInfo.classList.add('hidden');
-      clickInfoBike.classList.add('hidden');
-      if (mode === 'bike') {
-        clickInfoBike.classList.remove('hidden');
-      } else {
-        label.textContent = mode;
-        clickInfo.classList.remove('hidden');
+        return;
       }
-      document.body.style.overflow = 'hidden';
-    };
-    UI.clearMapPinMode = function() {
-      pinModeActive = false;
-      const overlay = document.getElementById('map-overlay');
-      overlay.classList.remove('open');
-      overlay.classList.add('hidden');
-      document.getElementById('map-fab').innerHTML = '<span class="ic" data-ic="map"></span>';
-      document.getElementById('map-click-info').classList.add('hidden');
-      document.getElementById('map-click-info-bike').classList.add('hidden');
-      document.body.style.overflow = '';
-      bikePinTarget = null;
-      pinTarget = null;
-    };
-    UI.isPinModeActive = function() { return pinModeActive; };
-
-    // Make close button in map overlay clear pin mode
-    document.getElementById('close-map-btn').addEventListener('click', () => {
-      if (bikePinTarget || pinTarget) {
-        UI.clearMapPinMode();
-      }
-    });
-
-    if (!UI.isBikeMarkersVisible()) {
+      if (!UI.isBikeMarkersVisible()) {
         try {
           const stops = await Stops.getNearby(lat, lon);
           if (stops.length) {
@@ -139,10 +95,20 @@ return;
       const overlay = document.getElementById('map-overlay');
       if (!overlay.classList.contains('open')) {
         overlay.classList.add('open');
-        document.getElementById('map-fab').innerHTML = '<span class="ic" data-ic="close"></span>';
         document.getElementById('map-toggle-btn').innerHTML = '<span class="ic" data-ic="close"></span> Close';
         document.body.style.overflow = 'hidden';
         setTimeout(() => { MapView.getMap()?.invalidateSize(); }, 100);
+      }
+    });
+
+    document.addEventListener('map-pin-loc', (e) => {
+      const { lat, lon, mode } = e.detail;
+      if (mode === 'from') {
+        UI._fromValue = { label: 'Pinned location', lat, lon };
+        document.getElementById('from-input').value = 'Pinned location';
+      } else if (mode === 'to') {
+        UI._toValue = { label: 'Pinned location', lat, lon };
+        document.getElementById('to-input').value = 'Pinned location';
       }
     });
 
@@ -219,12 +185,19 @@ return;
     let tripArrived = false;
     let tripDeviationStart = null;
     let tripRerouting = false;
+    let _navHeaderCleanup = null;
+
+    function _cleanupNavHandlers() {
+      if (_navHeaderCleanup) {
+        _navHeaderCleanup.forEach(({ el, type, fn, opts }) => el.removeEventListener(type, fn, opts));
+        _navHeaderCleanup = null;
+      }
+    }
 
     function openMapOverlay() {
       const overlay = document.getElementById('map-overlay');
       if (!overlay.classList.contains('open')) {
         overlay.classList.add('open');
-        document.getElementById('map-fab').innerHTML = '<span class="ic" data-ic="close"></span>';
         document.getElementById('map-toggle-btn').innerHTML = '<span class="ic" data-ic="close"></span> Close';
         document.body.style.overflow = 'hidden';
         setTimeout(() => { MapView.getMap()?.invalidateSize(); }, 100);
@@ -235,6 +208,10 @@ return;
       const key = e.detail.key;
       if (!activeJourneys || !activeJourneys[key]) return;
       if (!navigator.geolocation) { UI.showError('Geolocation not supported'); return; }
+
+      // Clean up any previous trip resources before starting a new one
+      if (tripWatchId !== null) { navigator.geolocation.clearWatch(tripWatchId); tripWatchId = null; }
+      _cleanupNavHandlers();
 
       tripActiveKey = key;
       tripLegIndex = 0;
@@ -257,7 +234,6 @@ return;
       overlay.style.right = '';
       overlay.style.width = '';
       overlay.style.height = '';
-      document.getElementById('map-fab').style.display = 'none';
       setTimeout(() => { const m = MapView.getMap(); if (m) m.invalidateSize(); }, 50);
 
       const tsBtn = document.getElementById('trip-start-btn');
@@ -272,9 +248,12 @@ return;
 
       navBar.style.display = 'block';
       navBar.classList.remove('collapsed');
-      navContent.innerHTML = '<div class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;margin-right:6px;vertical-align:middle"></div>Locating you...';
+      navContent.innerHTML = '<div style="display:flex;align-items:center;gap:6px;padding:4px 0"><div class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;flex-shrink:0"></div><span>Locating you...</span></div>';
       recenterBtn.style.display = 'none';
       if (tripEta) tripEta.textContent = '';
+      // Show locating message in map title bar too
+      const mapTitleText = document.querySelector('.map-title-text');
+      if (mapTitleText) mapTitleText.innerHTML = '<span class="ic" data-ic="map"></span> <span class="map-title-trip-info"><span class="leg-preview">Acquiring GPS...</span></span>';
 
       // Reroute button
       const rerouteBtn = document.getElementById('trip-reroute-btn');
@@ -353,8 +332,9 @@ return;
       toggleBtn.onclick = (e) => { e.stopPropagation(); doToggle(); };
       let dragOccurred = false;
 
-      // Trip nav drag
+      // Trip nav drag with safe-area clamping
       let dragOffX = 0, dragOffY = 0;
+      const getSafe = (name) => { const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return parseFloat(v) || 0; };
       const onDragStart = (ex) => {
         dragOccurred = false;
         const cx = ex.clientX ?? ex.touches[0].clientX;
@@ -370,8 +350,13 @@ return;
           dragOccurred = true;
           const mx = me.clientX ?? me.touches[0].clientX;
           const my = me.clientY ?? me.touches[0].clientY;
-          navBar.style.left = (mx - dragOffX) + 'px';
-          navBar.style.top = (my - dragOffY) + 'px';
+          const safeL = getSafe('--safe-l'), safeT = getSafe('--safe-t'), safeR = getSafe('--safe-r'), safeB = getSafe('--safe-b');
+          const w = navBar.offsetWidth, h = navBar.offsetHeight;
+          const vw = window.innerWidth, vh = window.innerHeight;
+          const left = Math.max(safeL + 4, Math.min(mx - dragOffX, vw - w - safeR - 4));
+          const top = Math.max(safeT + 4, Math.min(my - dragOffY, vh - h - safeB - 4));
+          navBar.style.left = left + 'px';
+          navBar.style.top = top + 'px';
         };
         const onEnd = () => {
           document.removeEventListener('mousemove', onMove);
@@ -384,18 +369,30 @@ return;
         document.addEventListener('touchmove', onMove, { passive: true });
         document.addEventListener('touchend', onEnd);
       };
-      navHeader.addEventListener('mousedown', onDragStart);
-      navHeader.addEventListener('touchstart', onDragStart, { passive: true });
-      navHeader.addEventListener('click', (e) => {
+      const clickHandler = (e) => {
         if (e.target.closest('#trip-nav-toggle')) return;
         if (dragOccurred) { dragOccurred = false; return; }
         doToggle();
-      });
+        // Restore CSS positioning so safe-area calc() takes effect
+        navBar.style.left = '';
+        navBar.style.top = '';
+        navBar.style.bottom = '';
+        navBar.style.right = '';
+      };
+      navHeader.addEventListener('mousedown', onDragStart);
+      navHeader.addEventListener('touchstart', onDragStart, { passive: true });
+      navHeader.addEventListener('click', clickHandler);
+      _navHeaderCleanup = [
+        { el: navHeader, type: 'mousedown', fn: onDragStart },
+        { el: navHeader, type: 'touchstart', fn: onDragStart, opts: { passive: true } },
+        { el: navHeader, type: 'click', fn: clickHandler }
+      ];
 
     });
 
     document.addEventListener('end-trip', () => {
       if (tripWatchId !== null) { navigator.geolocation.clearWatch(tripWatchId); tripWatchId = null; }
+      _cleanupNavHandlers();
       tripActiveKey = null;
       tripLegIndex = -1;
       lastLegTransitionTime = 0;
@@ -403,15 +400,19 @@ return;
       tripArrived = false;
       tripDeviationStart = null;
       tripRerouting = false;
+      window._lastConnectionCheck = 0;
       const rBtn = document.getElementById('trip-reroute-btn');
       if (rBtn) { rBtn.style.display = 'none'; rBtn.disabled = false; rBtn.onclick = null; }
       const tsBtn = document.getElementById('trip-start-btn');
       const teBtn = document.getElementById('trip-end-btn');
       if (tsBtn) tsBtn.style.display = 'none';
       if (teBtn) teBtn.style.display = 'none';
-      document.getElementById('trip-nav-bar').style.display = 'none';
-      document.getElementById('trip-progress-text').textContent = '0%';
-      document.getElementById('trip-progress-fill').style.width = '0%';
+      const navBar = document.getElementById('trip-nav-bar');
+      if (navBar) navBar.style.display = 'none';
+      const progText = document.getElementById('trip-progress-text');
+      if (progText) progText.textContent = '0%';
+      const progFill = document.getElementById('trip-progress-fill');
+      if (progFill) progFill.style.width = '0%';
       const tripEta = document.getElementById('trip-eta');
       if (tripEta) tripEta.textContent = '';
       MapView.hideUserLocation();
@@ -419,18 +420,22 @@ return;
       activeJourneys = null;
       activeFromMarker = null;
       activeToMarker = null;
-      document.getElementById('results-panel').innerHTML = '';
+      const resultsPanel = document.getElementById('results-panel');
+      if (resultsPanel) resultsPanel.innerHTML = '';
       const mapOverlay = document.getElementById('map-overlay');
-      mapOverlay.classList.remove('floating', 'popout', 'open');
-      delete mapOverlay.dataset.tripFs;
-      delete mapOverlay.dataset.tripFsWasMin;
-      mapOverlay.style.left = '';
-      mapOverlay.style.top = '';
-      mapOverlay.style.bottom = '';
-      mapOverlay.style.right = '';
-      mapOverlay.style.width = '';
-      mapOverlay.style.height = '';
-      document.getElementById('map-fab').style.display = '';
+      if (mapOverlay) {
+        mapOverlay.classList.remove('floating', 'popout', 'open');
+        delete mapOverlay.dataset.tripFs;
+        delete mapOverlay.dataset.tripFsWasMin;
+        mapOverlay.style.left = '';
+        mapOverlay.style.top = '';
+        mapOverlay.style.bottom = '';
+        mapOverlay.style.right = '';
+        mapOverlay.style.width = '';
+        mapOverlay.style.height = '';
+      }
+      const mapTitleText = document.querySelector('.map-title-text');
+      if (mapTitleText) mapTitleText.innerHTML = '<span class="ic" data-ic="map"></span> Trip Map';
     });
 
     // Floating map handlers (set up once, outside start-trip to prevent duplicate listeners)
@@ -509,6 +514,7 @@ return;
         mapDragOccurred = false;
         const cx = ex.clientX ?? ex.touches[0].clientX;
         const cy = ex.clientY ?? ex.touches[0].clientY;
+        const gs = (n) => { const v = getComputedStyle(document.documentElement).getPropertyValue(n).trim(); return parseFloat(v) || 0; };
         let dragInit = false;
         const onMove = (me) => {
           if (!dragInit) {
@@ -524,8 +530,13 @@ return;
           }
           const mx = me.clientX ?? me.touches[0].clientX;
           const my = me.clientY ?? me.touches[0].clientY;
-          overlay.style.left = (mx - mapDragOffX) + 'px';
-          overlay.style.top = (my - mapDragOffY) + 'px';
+          const safeL = gs('--safe-l'), safeT = gs('--safe-t'), safeR = gs('--safe-r'), safeB = gs('--safe-b');
+          const w = overlay.offsetWidth, h = overlay.offsetHeight;
+          const vw = window.innerWidth, vh = window.innerHeight;
+          const left = Math.max(safeL + 4, Math.min(mx - mapDragOffX, vw - w - safeR - 4));
+          const top = Math.max(safeT + 4, Math.min(my - mapDragOffY, vh - h - safeB - 4));
+          overlay.style.left = left + 'px';
+          overlay.style.top = top + 'px';
         };
         const onEnd = () => {
           document.removeEventListener('mousemove', onMove);
@@ -639,7 +650,6 @@ return;
           } else if (overlay.classList.contains('open')) {
             window.__legViewActive = false;
             overlay.classList.remove('open');
-            document.getElementById('map-fab').innerHTML = '<span class="ic" data-ic="map"></span>';
             document.getElementById('map-toggle-btn').innerHTML = '<span class="ic" data-ic="map"></span> Map';
             document.body.style.overflow = '';
             // Handle 3D map restore
@@ -684,15 +694,31 @@ return;
       const journey = activeJourneys[tripActiveKey];
       if (!journey) return;
       MapView.clearRoutes();
+      MapView.clearMarkers();
       const modeColors = { walking: '#666', bus: '#e32017', tube: '#0019a8', dlr: '#00a94f', overground: '#f86c00', 'elizabeth-line': '#6950a0', 'national-rail': '#003688', tram: '#66cc00' };
+      const firstLeg = journey.legs[0];
+      const lastLeg = journey.legs[journey.legs.length - 1];
+      if (firstLeg && firstLeg.from) MapView.addMarker(firstLeg.from.lat, firstLeg.from.lon, 'From: ' + (firstLeg.from.name || 'Start'), '#0019a8');
+      if (lastLeg && lastLeg.to) MapView.addMarker(lastLeg.to.lat, lastLeg.to.lon, 'To: ' + (lastLeg.to.name || 'Destination'), '#e32017');
+
       journey.legs.forEach((leg, i) => {
         const path = leg.path || [];
         if (path.length >= 2) {
-          let color;
-          if (i < tripLegIndex) color = '#00cc66';
-          else if (i === tripLegIndex) color = '#33ff99';
-          else color = modeColors[leg.mode] || '#555';
-          MapView.addRoute(path, color, '');
+          let color, w;
+          if (i < tripLegIndex) { color = '#00cc66'; w = 3; }
+          else if (i === tripLegIndex) {
+            color = '#33ff99'; w = 6;
+            // Show intermediate stop markers for current leg
+            if (leg.stops && leg.stops.length) {
+              leg.stops.forEach(s => {
+                if (s.lat != null && s.lon != null) {
+                  MapView.addMarker(s.lat, s.lon, s.name || 'Stop', 'rgba(255,255,255,0.3)');
+                }
+              });
+            }
+          }
+          else { color = modeColors[leg.mode] || '#555'; w = 4; }
+          MapView.addRoute(path, color, '', w);
         }
       });
     }
@@ -798,6 +824,34 @@ return;
       const eta = new Date(Date.now() + remainingSecs * 1000);
       const etaStr = eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
+      // --- Connection Alert Check ---
+      if (!tripArrived && tripLegIndex < legs.length - 1 && now - (window._lastConnectionCheck || 0) > 30000) {
+        window._lastConnectionCheck = now;
+        const nextLeg = legs[tripLegIndex + 1];
+        if (nextLeg && nextLeg.from && nextLeg.from.id && nextLeg.mode !== 'walking' && ['bus','tube','dlr','overground','elizabeth-line','national-rail','tram'].includes(nextLeg.mode)) {
+          (async () => {
+            try {
+              const arrs = await Stops.getArrivals(nextLeg.from.id);
+              const routeName = nextLeg.routeName;
+              if (!routeName) return;
+              const matched = arrs.filter(a => (a.lineId === routeName || a.line === routeName) && (!nextLeg.direction || (a.dirLabel || '').toLowerCase().includes(nextLeg.direction.toLowerCase())));
+              const scheduledDep = nextLeg.departureTime ? new Date(nextLeg.departureTime) : null;
+              if (scheduledDep && matched.length) {
+                const actualDep = matched[0].expected ? new Date(matched[0].expected) : null;
+                if (actualDep) {
+                  const delayMin = (actualDep - scheduledDep) / 60000;
+                  if (delayMin > 2) {
+                    showRerouteNotification('⚠️ Next ' + (routeName || nextLeg.modeName) + ' at ' + (nextLeg.from.name || 'stop') + ' delayed by ' + Math.round(delayMin) + ' min');
+                  }
+                }
+              } else if (scheduledDep && arrs.length > 0 && !matched.length && (now - scheduledDep.getTime()) > -60000) {
+                showRerouteNotification('⚠️ Next ' + (routeName || nextLeg.modeName) + ' at ' + (nextLeg.from.name || 'stop') + ' may be cancelled');
+              }
+            } catch {}
+          })();
+        }
+      }
+
       // --- Update UI ---
       const progressText = document.getElementById('trip-progress-text');
       const progressFill = document.getElementById('trip-progress-fill');
@@ -812,10 +866,12 @@ return;
 
       let html = '';
       if (tripArrived) {
-        html += `<div style="font-weight:700;color:#4caf50;font-size:14px;text-align:center;padding:6px 0">✅ Arrived at ${destName}</div>`;
+        html += '<div class="trip-step current" style="text-align:center"><div class="trip-step-header" style="justify-content:center;font-size:14px">✅ Arrived</div><div class="trip-step-loc" style="text-align:center">' + destName + '</div></div>';
       } else {
         const nextLeg = legs[tripLegIndex + 1];
         const cur = legs[tripLegIndex];
+
+        // Current leg
         if (cur) {
           const modeIcon = Router.getModeIcon(cur.mode);
           const modeName = cur.modeName || cur.mode || '';
@@ -823,30 +879,84 @@ return;
           const dep = cur.departureTime ? new Date(cur.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
           const arr = cur.arrivalTime ? new Date(cur.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
           const fromName = cur.from ? (cur.from.name || '') : '';
+          const toName = cur.to ? (cur.to.name || '') : '';
           const detail = cur.detail || cur.instruction || '';
           const plat = cur.platformName || '';
           const dir = cur.direction || '';
 
-          html += `<div style="font-weight:600">${modeIcon} ${modeName}${routeName ? ' ' + routeName : ''} · ${cur.duration || 0} min</div>`;
-          if (fromName) html += `<div style="color:var(--text2);font-size:10px">${fromName}</div>`;
-          if (detail) html += `<div style="color:var(--text2);font-size:10px">${detail}</div>`;
-          if (plat) html += `<div style="color:#ffa500;font-size:10px">Platform ${plat}</div>`;
-          if (dir) html += `<div style="color:var(--text2);font-size:10px">→ ${dir}</div>`;
-          html += `<div style="color:var(--text2);font-size:10px">${dep ? dep : ''}${dep && arr ? ' → ' : ''}${arr ? arr : ''}</div>`;
+          // Countdown: time until arrival of current leg
+          const curArrTime = cur.arrivalTime ? new Date(cur.arrivalTime).getTime() : 0;
+          const countdownMs = curArrTime ? Math.max(0, curArrTime - Date.now()) : 0;
+          const countdownMin = Math.floor(countdownMs / 60000);
+          const countdownSec = Math.floor((countdownMs % 60000) / 1000);
+          const countdownStr = countdownMs > 0 ? (countdownMin > 0 ? countdownMin + 'm ' : '') + countdownSec + 's' : '';
+
+          const legProgressPct = Math.round(currentLegProgress * 100);
+          const label = (modeName + (routeName ? ' ' + routeName : '')).trim() || 'Travel';
+
+          html += '<div class="trip-step current">';
+          html += '<div class="trip-step-header"><span class="mode-icon">' + modeIcon + '</span><span class="route-name">' + label + '</span><span class="step-dur">' + (cur.duration || 0) + ' min</span></div>';
+          if (fromName && toName && cur.mode !== 'walking') html += '<div class="trip-step-loc">' + fromName + ' → ' + toName + '</div>';
+          if (detail && cur.mode === 'walking') html += '<div class="trip-step-loc">' + detail + '</div>';
+
+          // Meta row: platform, direction, times
+          let metaParts = [];
+          if (plat) metaParts.push('<span class="plat-badge">' + plat + '</span>');
+          if (dir) metaParts.push('<span class="trip-step-dir">→ ' + dir + '</span>');
+          if (dep || arr) metaParts.push('<span class="trip-time">' + (dep || '') + (dep && arr ? ' → ' : '') + (arr || '') + '</span>');
+          if (metaParts.length) html += '<div class="trip-step-meta">' + metaParts.join('') + '</div>';
+
+          // Countdown
+          if (countdownStr) html += '<div class="trip-countdown">Arriving in ' + countdownStr + '</div>';
+
+          // Mini progress bar for within-leg progress
+          if (legProgressPct > 0 && legProgressPct < 100) html += '<div class="trip-step-progress"><div class="trip-step-progress-fill" style="width:' + legProgressPct + '%"></div></div>';
+
+          html += '</div>';
         }
 
-        if (nextLeg) {
+        // Next leg connection
+        if (nextLeg && nextLeg.mode !== 'walking') {
           const nextIcon = Router.getModeIcon(nextLeg.mode);
-          const nextName = nextLeg.modeName || nextLeg.mode || '';
-          const nextRoute = nextLeg.routeName || '';
+          const nextName = (nextLeg.modeName || nextLeg.mode || '') + (nextLeg.routeName ? ' ' + nextLeg.routeName : '');
           const nextFrom = nextLeg.from ? nextLeg.from.name : '';
-          html += `<div style="margin-top:4px;padding-top:4px;border-top:1px solid var(--surface3);color:var(--text2);font-size:10px">
-            Next: ${nextIcon} ${nextName}${nextRoute ? ' ' + nextRoute : ''}${nextFrom ? ' from ' + nextFrom : ''} (${nextLeg.duration || 0} min)
-          </div>`;
+          const nextDepTime = nextLeg.departureTime ? new Date(nextLeg.departureTime) : null;
+          const nextCountdownMs = nextDepTime ? Math.max(0, nextDepTime.getTime() - Date.now()) : 0;
+          const nextCountdownMin = Math.floor(nextCountdownMs / 60000);
+          const nextCountdownSec = Math.floor((nextCountdownMs % 60000) / 1000);
+          const nextTimeStr = nextDepTime ? nextDepTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+          html += '<div class="trip-step next">';
+          html += '<div class="trip-step-header"><span class="mode-icon">' + nextIcon + '</span><span class="route-name">Next: ' + nextName + '</span><span class="step-dur">' + (nextLeg.duration || 0) + ' min</span></div>';
+          if (nextFrom) html += '<div class="trip-step-loc">from ' + nextFrom + '</div>';
+          if (nextTimeStr) html += '<div class="trip-step-meta"><span class="trip-time">' + nextTimeStr + '</span></div>';
+          if (nextCountdownMs > 0 && nextCountdownMs < 600000) {
+            html += '<div class="next-countdown">Departs in ' + (nextCountdownMin > 0 ? nextCountdownMin + 'm ' : '') + nextCountdownSec + 's</div>';
+          }
+          html += '</div>';
+        } else if (nextLeg && nextLeg.mode === 'walking') {
+          html += '<div class="trip-step next"><div class="trip-step-header"><span class="mode-icon">🚶</span><span class="route-name">Walk ' + (nextLeg.duration || 0) + ' min</span></div></div>';
         }
-        html += `<div style="margin-top:2px;font-size:10px;color:var(--text2)">→ ${destName}</div>`;
+
+        // Destination
+        html += '<div class="trip-step-dest">→ ' + destName + '</div>';
       }
       document.getElementById('trip-nav-content').innerHTML = html;
+
+      // Update map title bar with trip info
+      const mapTitleText = document.querySelector('.map-title-text');
+      if (mapTitleText && !tripArrived) {
+        const cur = legs[tripLegIndex];
+        const dest = destName;
+        if (cur) {
+          const modeIcon = Router.getModeIcon(cur.mode);
+          const routeName = cur.routeName || '';
+          const label = routeName ? modeIcon + ' ' + routeName + ' → ' : modeIcon + ' → ';
+          mapTitleText.innerHTML = '<span class="ic" data-ic="map"></span> <span class="map-title-trip-info"><span class="leg-preview">' + label + '<span class="route-label">' + dest + '</span></span><span class="trip-progress-pct">' + totalProgress + '%</span></span>';
+        }
+      } else if (mapTitleText && tripArrived) {
+        mapTitleText.innerHTML = '<span class="ic" data-ic="map"></span> ✅ Arrived';
+      }
 
       // --- Highlight steps in journey card ---
       document.querySelectorAll('.journey-card .step').forEach((el, i) => {
@@ -941,7 +1051,6 @@ return;
       mapOv.style.right = '';
       mapOv.style.width = '';
       mapOv.style.height = '';
-      document.getElementById('map-fab').style.display = '';
     });
 
     // --- Bike Points Toggle ---
@@ -951,7 +1060,6 @@ return;
       const overlay = document.getElementById('map-overlay');
       if (overlay && !overlay.classList.contains('open')) {
         overlay.classList.add('open');
-        const fab = document.getElementById('map-fab'); if (fab) fab.innerHTML = '<span class="ic" data-ic="close"></span>';
         const toggle = document.getElementById('map-toggle-btn'); if (toggle) toggle.innerHTML = '<span class="ic" data-ic="close"></span> Close';
         document.body.style.overflow = 'hidden';
         setTimeout(() => { const m = MapView.getMap && MapView.getMap(); if (m && m.invalidateSize) m.invalidateSize(); }, 100);
@@ -974,7 +1082,6 @@ return;
         bBtn.style.display = 'none';
         if (overlay.classList.contains('open')) {
           overlay.classList.remove('open');
-          document.getElementById('map-fab').innerHTML = '<span class="ic" data-ic="map"></span>';
           document.getElementById('map-toggle-btn').innerHTML = '<span class="ic" data-ic="map"></span> Map';
           document.body.style.overflow = '';
         }
@@ -1749,6 +1856,24 @@ function drawJourneyRoutesOnMap(journey) {
       const mid = Math.floor(allCoords.length / 2);
       return { lat: allCoords[mid][0], lon: allCoords[mid][1] };
     }
-    return { lat: CONFIG.mapCenter[0], lon: CONFIG.mapCenter[1] };
+      return { lat: CONFIG.mapCenter[0], lon: CONFIG.mapCenter[1] };
   }
+
+    // --- Timetable Date Bar ---
+    document.addEventListener('click', (e) => {
+      let btn, newDate;
+      if ((btn = e.target.closest('.tt-date-prev')) && btn.dataset.date) {
+        newDate = new Date(btn.dataset.date + 'T12:00:00');
+      } else if ((btn = e.target.closest('.tt-date-next')) && btn.dataset.date) {
+        newDate = new Date(btn.dataset.date + 'T12:00:00');
+      } else if ((btn = e.target.closest('.tt-date-today'))) {
+        newDate = new Date();
+      } else if ((btn = e.target.closest('.tt-date-tomorrow'))) {
+        newDate = new Date(Date.now() + 86400000);
+      } else {
+        return;
+      }
+      if (isNaN(newDate.getTime())) return;
+      UI.changeTimetableDate(newDate);
+    });
 })();

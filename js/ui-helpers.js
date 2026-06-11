@@ -3,7 +3,8 @@
 
   UI.showToast = function(msg, duration) {
     const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1a1a2e;color:#e8e8f0;padding:8px 16px;border-radius:8px;font-size:12px;z-index:9999;border:1px solid var(--accent);box-shadow:0 4px 20px rgba(0,0,0,.5);opacity:0;transition:opacity .2s';
+    const sb = getComputedStyle(document.documentElement).getPropertyValue('--safe-b').trim() || '0px';
+    el.style.cssText = 'position:fixed;bottom:calc(20px + ' + sb + ');left:50%;transform:translateX(-50%);background:#1a1a2e;color:#e8e8f0;padding:8px 16px;border-radius:8px;font-size:12px;z-index:9999;border:1px solid var(--accent);box-shadow:0 4px 20px rgba(0,0,0,.5);opacity:0;transition:opacity .2s';
     el.textContent = msg;
     document.body.appendChild(el);
     requestAnimationFrame(() => el.style.opacity = '1');

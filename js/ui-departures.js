@@ -13,6 +13,19 @@
     const list = document.getElementById('departures-list');
     const letterHtml = stopLetter ? '<span class="stop-letter">' + stopLetter + '</span>' : '';
     panel.querySelector('h3').innerHTML = '\u{1F68F} ' + stopName + ' ' + letterHtml + ' <span class="live-badge">LIVE</span>';
+    Stops.getStopAccessibility(stopId).then(acc => {
+      if (acc && acc.stepFree) {
+        const h3 = panel.querySelector('h3');
+        if (h3 && !h3.querySelector('.acc-badge')) {
+          const badge = document.createElement('span');
+          badge.className = 'acc-badge';
+          badge.textContent = '\u267F';
+          badge.title = acc.text || 'Step-free access';
+          if (acc.hearingLoop) badge.textContent += ' [H]';
+          h3.appendChild(badge);
+        }
+      }
+    }).catch(() => {});
     loadArrivals(stopId, list);
     departuresTimer2 = setInterval(async () => {
       if (panel.style.display !== 'none') await loadArrivals(stopId, list, true);
@@ -86,11 +99,13 @@
             const cls = mins <= 1 ? 'due' : mins <= 5 ? 'soon' : '';
             const aPlat = a.platformName || '';
             const platDisplay = aPlat ? 'Plat. ' + aPlat.replace(boundRe, '').replace(/^\s*[-:]\s*/, '').trim() : '';
+            const platClean = aPlat.replace(boundRe, '').replace(/^\s*[-:]\s*/, '').replace(/^(Platform|Plat\.?|Bus Stop|Stop)\s*/i, '').trim();
+            const platBadge = platClean && platClean.length <= 6 ? '<span class="plat-badge">' + platClean + '</span>' : '';
             const dirTag = a.dirLabel ? ' <span class="arr-dir">' + a.dirLabel + '</span>' : '';
             const dueText = mins <= 0 ? '<span class="arr-due">Due</span>' : mins === 1 ? '<span class="arr-min">1 min</span>' : '<span class="arr-min">' + mins + ' min</span>';
             const schedTag = a._scheduled ? ' <span class="sched-mini">SCHED</span>' : '';
             html += '<div class="line-arrival ' + cls + '">'
-              + '<span class="arr-dest">' + (a.destination || '') + dirTag + '</span>'
+              + '<span class="arr-dest">' + platBadge + (a.destination || '') + dirTag + '</span>'
               + '<span class="arr-plat">' + platDisplay + schedTag + '</span>'
               + '<span class="arr-time">' + dueText + '</span>'
               + '</div>';
@@ -103,8 +118,10 @@
 
       // Re-apply previous direction filter if set
       const panel = document.getElementById('departures-panel');
-      const savedDir = panel.dataset.dirFilter || '';
-      if (savedDir) applyDirFilter(list, savedDir);
+      if (panel) {
+        const savedDir = panel.dataset.dirFilter || '';
+        if (savedDir) applyDirFilter(list, savedDir);
+      }
 
       // Direction filter click handler
       list.querySelectorAll('.dir-filter-btn').forEach(btn => {
@@ -112,7 +129,7 @@
           list.querySelectorAll('.dir-filter-btn').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           const dir = btn.dataset.dir;
-          panel.dataset.dirFilter = dir;
+          if (panel) panel.dataset.dirFilter = dir;
           applyDirFilter(list, dir);
         });
       });

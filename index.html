@@ -10,7 +10,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="img/icon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="img/icon.svg">
+  <link rel="apple-touch-icon" href="img/icon-192.png">
   <title>London Transit</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.min.css" />
@@ -121,6 +121,7 @@
       </div>
 
       <div id="tab-status" class="tab-content">
+        <div id="my-lines-section" class="my-lines-section"><div class="my-lines-header">My Lines</div><div id="my-lines-list" class="my-lines-list"></div></div>
         <div id="status-content"></div>
       </div>
     </main>
@@ -145,10 +146,10 @@
     <div id="departures-panel" class="slide-panel" style="display:none">
       <div class="panel-header">
         <h3><span class="ic" data-ic="departures"></span> Live Departures <span class="live-badge">LIVE</span></h3>
-        <div class="panel-actions">
-          <button class="panel-timetable-btn" title="Full Day Timetable"><span class="ic" data-ic="timetable"></span></button>
-          <button class="panel-refresh" title="Refresh"><span class="ic" data-ic="refresh"></span></button>
-          <button class="panel-close" title="Close"><span class="ic" data-ic="close"></span></button>
+          <div class="panel-actions">
+            <button class="panel-timetable-btn" title="Full Day Timetable"><span class="ic" data-ic="timetable"></span></button>
+            <button class="panel-refresh" title="Refresh"><span class="ic" data-ic="refresh"></span></button>
+            <button class="panel-close" title="Close"><span class="ic" data-ic="close"></span></button>
         </div>
       </div>
       <div class="panel-body" id="departures-list"></div>
@@ -180,7 +181,6 @@
     <button id="close-map-btn" class="map-overlay-btn" title="Close map"><span class="ic" data-ic="close"></span></button>
     <button id="view-3d-btn" class="map-overlay-btn view-3d" title="Toggle 3D view"><span class="ic" data-ic="map"></span> 3D</button>
     <div id="map-click-info" class="hidden">Click on map to set <strong id="click-target-label">from</strong> location</div>
-    <div id="map-click-info-bike" class="hidden">Click on map to set <strong>bike search</strong> location</div>
     <div id="map-legend" class="hidden">
       <span class="legend-item"><span class="legend-dot" style="background:#e32017"></span>Bus</span>
       <span class="legend-item"><span class="legend-dot" style="background:#0019a8"></span>Tube</span>
@@ -192,7 +192,6 @@
     <div id="map-resize-handle"></div>
   </div>
 
-  <button id="map-fab" title="Open map"><span class="ic" data-ic="map"></span></button>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

@@ -139,25 +139,26 @@
   }
 
   function setupMapToggle() {
-    const pinCheck = () => { if (window.UI && window.UI.isPinModeActive && window.UI.isPinModeActive()) { UI.clearMapPinMode(); return true; } return false; };
-    document.getElementById('map-fab').addEventListener('click', () => { if (!pinCheck()) toggleMap(); });
-    document.getElementById('close-map-btn').addEventListener('click', () => {
-      if (window.UI && window.UI.isPinModeActive && window.UI.isPinModeActive()) { UI.clearMapPinMode(); return; }
-      toggleMap();
+    document.getElementById('close-map-btn').addEventListener('click', toggleMap);
+    document.getElementById('map-toggle-btn').addEventListener('click', toggleMap);
+    document.addEventListener('toggle-map', (e) => {
+      const overlay = document.getElementById('map-overlay');
+      const shouldOpen = e.detail?.open ?? !overlay.classList.contains('open');
+      if (shouldOpen !== overlay.classList.contains('open')) {
+        toggleMap();
+      }
     });
-    document.getElementById('map-toggle-btn').addEventListener('click', () => { if (!pinCheck()) toggleMap(); });
   }
 
   function toggleMap() {
     const overlay = document.getElementById('map-overlay');
     if (overlay.classList.contains('floating') || overlay.dataset.tripFs) return;
-    const fab = document.getElementById('map-fab');
     const btn = document.getElementById('map-toggle-btn');
     mapOpen = !overlay.classList.contains('open');
     overlay.classList.toggle('open', mapOpen);
-    fab.innerHTML = mapOpen ? '<span class="ic" data-ic="close"></span>' : '<span class="ic" data-ic="map"></span>';
     btn.innerHTML = mapOpen ? '<span class="ic" data-ic="close"></span> Close' : '<span class="ic" data-ic="map"></span> Map';
     document.body.style.overflow = mapOpen ? 'hidden' : '';
+    document.dispatchEvent(new CustomEvent('toggle-map', { detail: { open: mapOpen } }));
     if (mapOpen && typeof MapView !== 'undefined') {
       setTimeout(() => {
         const map = MapView.getMap();
@@ -228,6 +229,82 @@
         }
       }
     } catch {}
+    renderSavedLines();
+  }
+
+  function renderSavedLines() {
+    const list = document.getElementById('my-lines-list');
+    if (!list) return;
+    const saved = Store.getSavedLines();
+    if (!saved || !saved.length) {
+      list.innerHTML = '<div class="my-lines-empty">No lines saved — tap ☆ on a timetable to add one</div>';
+      return;
+    }
+    const lines = (statusLines && Array.isArray(statusLines)) ? statusLines : [];
+    let html = '';
+    saved.forEach(sl => {
+      const line = lines.find(l => l.id === sl.id || l.name === sl.id);
+      const cls = line ? line.statusCls || 'info' : 'info';
+      const statusText = line ? (line.statusText || (line.statusCls === 'good' ? 'Good Service' : line.reason || 'Check status')) : 'Checking...';
+      const color = line && line.color ? line.color : '#888';
+      const isNR = sl.mode === 'national-rail';
+      html += '<div class="my-lines-item" data-line="' + sl.id + '">'
+        + '<span class="my-lines-dot" style="background:' + color + '"></span>'
+        + '<span class="my-lines-name">' + sl.name + '</span>'
+        + '<span class="my-lines-status ' + cls + '">' + statusText + '</span>'
+        + (isNR ? '<span class="my-lines-note">(arrivals only)</span>' : '')
+        + '<button class="my-lines-remove" data-line="' + sl.id + '" title="Remove line">\u2716</button>'
+        + '</div>';
+    });
+    list.innerHTML = html;
+    list.querySelectorAll('.my-lines-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        if (e.target.closest('.my-lines-remove')) return;
+        const lineId = item.dataset.line;
+        const savedLine = saved.find(sl => sl.id === lineId);
+        if (!savedLine) return;
+        const tabStatus = document.querySelector('.tab-btn[data-tab="status"]');
+        if (tabStatus) {
+          document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+          tabStatus.classList.add('active');
+          document.getElementById('tab-status').classList.add('active');
+        }
+        const mode = savedLine.mode || 'tube';
+        const isBus = mode === 'bus';
+        const outerId = isBus ? 'status-buses' : 'status-trains';
+        const outerHeader = document.querySelector('#status-content .status-accordion-header[data-target="' + outerId + '"]');
+        if (outerHeader) {
+          const outerBody = document.getElementById(outerId);
+          const wasExpanded = outerBody && outerBody.classList.contains('expanded');
+          outerHeader.click();
+          if (!isBus && outerBody) {
+            const innerId = 's-' + mode.replace(/[^a-z0-9-]/g, '');
+            const innerAccordion = outerBody.querySelector('#\\' + innerId);
+            if (innerAccordion) {
+              const innerHeader = innerAccordion.closest('.status-accordion')?.querySelector('.status-accordion-header');
+              if (innerHeader && !innerAccordion.classList.contains('expanded')) innerHeader.click();
+              const targetLine = innerAccordion.querySelector('.status-line[data-bus="' + lineId.toLowerCase() + '"]');
+              if (targetLine) setTimeout(() => targetLine.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
+            }
+          } else if (isBus && outerBody) {
+            const targetLine = outerBody.querySelector('.status-line[data-bus="' + lineId.toLowerCase() + '"]');
+            if (targetLine) setTimeout(() => targetLine.scrollIntoView({ behavior: 'smooth', block: 'center' }), 200);
+          }
+        }
+      });
+    });
+    list.querySelectorAll('.my-lines-remove').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const lineId = btn.dataset.line;
+        const savedLine = saved.find(sl => sl.id === lineId);
+        if (savedLine) {
+          Store.toggleSavedLine(savedLine);
+          renderSavedLines();
+        }
+      });
+    });
   }
 
   function swapLocations() {
