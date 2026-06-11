@@ -943,20 +943,7 @@
       }
       document.getElementById('trip-nav-content').innerHTML = html;
 
-      // Update map title bar with trip info
-      const mapTitleText = document.querySelector('.map-title-text');
-      if (mapTitleText && !tripArrived) {
-        const cur = legs[tripLegIndex];
-        const dest = destName;
-        if (cur) {
-          const modeIcon = Router.getModeIcon(cur.mode);
-          const routeName = cur.routeName || '';
-          const label = routeName ? modeIcon + ' ' + routeName + ' → ' : modeIcon + ' → ';
-          mapTitleText.innerHTML = '<span class="ic" data-ic="map"></span> <span class="map-title-trip-info"><span class="leg-preview">' + label + '<span class="route-label">' + dest + '</span></span><span class="trip-progress-pct">' + totalProgress + '%</span></span>';
-        }
-      } else if (mapTitleText && tripArrived) {
-        mapTitleText.innerHTML = '<span class="ic" data-ic="map"></span> ✅ Arrived';
-      }
+
 
       // --- Highlight steps in journey card ---
       document.querySelectorAll('.journey-card .step').forEach((el, i) => {

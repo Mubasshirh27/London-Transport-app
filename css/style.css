@@ -937,22 +937,15 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 .journey-card .step.upcoming { opacity: 0.5; }
 
 /* Trip map title bar info */
-.map-title-trip-info {
-  font-size: 10px; opacity: .85; margin-left: auto; display: flex; align-items: center; gap: 6px;
-  min-width: 0; overflow: hidden; white-space: nowrap;
-}
-.map-title-trip-info .leg-preview { display: flex; align-items: center; gap: 3px; min-width: 0; overflow: hidden; }
-.map-title-trip-info .leg-preview .mode-icon { font-size: 12px; }
-.map-title-trip-info .leg-preview .route-label { overflow: hidden; text-overflow: ellipsis; }
-.map-title-trip-info .trip-progress-pct { font-weight: 700; }
+
 
 /* ── Map Overlay ── */
 #map-overlay {
-  position: fixed; inset: 0; z-index: 5000; background: var(--bg);
+  position: fixed; top: var(--safe-t); left: var(--safe-l); right: var(--safe-r); bottom: var(--safe-b); z-index: 5000; background: var(--bg);
   opacity: 0; pointer-events: none; transition: opacity .25s, width .3s, height .3s;
   display: flex; flex-direction: column;
 }
-#map-overlay.open { opacity: 1; pointer-events: auto; width: auto !important; height: auto !important; }
+#map-overlay.open { opacity: 1; pointer-events: auto; width: auto !important; height: auto !important; top: 0; left: 0; right: 0; bottom: 0; }
 #map { width: 100%; height: 100%; }
 #map-overlay.floating {
   position: fixed; width: 320px; height: 320px; min-width: 280px; min-height: 200px;
