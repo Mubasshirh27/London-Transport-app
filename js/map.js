@@ -50,15 +50,20 @@ const MapView = (() => {
     }
   }
 
-  function addRoute3d(points, color) {
+  function addRoute3d(points, color, weight, opacity) {
     if (!mlMap || !points || points.length < 2) return null;
     const id = 'route3d_' + (routeIdCounter++);
     const glowId = id + '_glow';
+    const w = weight || 4;
+    const op = opacity != null ? opacity : 0.85;
+    const glowOp = Math.min(0.25, op * 0.25);
     const coords = points.map(p => [p[1], p[0]]);
     mlMap.addSource(id, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } } });
-    mlMap.addLayer({ id: glowId, type: 'line', source: id, paint: { 'line-color': color || '#0019a8', 'line-width': 10, 'line-opacity': 0.2, 'line-blur': 4 } });
-    mlMap.addLayer({ id, type: 'line', source: id, paint: { 'line-color': color || '#0019a8', 'line-width': 4, 'line-opacity': 0.85 } });
+    mlMap.addLayer({ id: glowId, type: 'line', source: id, paint: { 'line-color': color || '#0019a8', 'line-width': w * 2.5, 'line-opacity': glowOp, 'line-blur': 4 } });
+    mlMap.addLayer({ id, type: 'line', source: id, paint: { 'line-color': color || '#0019a8', 'line-width': w, 'line-opacity': op } });
     mlRouteLayers.push(id, glowId);
+    if (!window.__ml_lineLayer) window.__ml_lineLayer = { lines: [] };
+    window.__ml_lineLayer.lines.push(id, glowId);
     return id;
   }
 
@@ -68,7 +73,7 @@ const MapView = (() => {
     const isTo = label && label.includes('To:');
     const size = (isFrom || isTo) ? 32 : 18;
     const border = (isFrom || isTo) ? '4px' : '3px';
-    const html = `<div style="position:relative;background:${color||'#0019a8'};width:${size}px;height:${size}px;border-radius:50%;border:${border} solid white;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white">${isFrom ? 'A' : isTo ? 'B' : ''}</div>`;
+    const html = `<div style="position:relative;background:${color||'#0019a8'} !important;width:${size}px;height:${size}px;border-radius:50%;border:${border} solid white !important;box-shadow:0 2px 8px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white">${isFrom ? 'A' : isTo ? 'B' : ''}</div>`;
     const icon = L.divIcon({
       className: 'custom-marker',
       html: html + `<div style="position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:white;padding:2px 6px;border-radius:4px;font-size:10px;white-space:nowrap;font-weight:600">${(label||'').replace(/^(From:|To:)\s*/,'')}</div>`,
@@ -82,9 +87,10 @@ const MapView = (() => {
     return m;
   }
 
-  function addRoute(points, color, label, weight) {
+  function addRoute(points, color, label, weight, opacity) {
     if (!points || points.length === 0) return;
-    const polyline = L.polyline(points, { color: color || '#0019a8', weight: weight || 4, opacity: 0.8 }).addTo(map);
+    const op = opacity != null ? opacity : 0.8;
+    const polyline = L.polyline(points, { color: color || '#0019a8', weight: weight || 4, opacity: op }).addTo(map);
     routes.push(polyline);
     routeData.push({ points, color, label });
     if (label) {
@@ -94,7 +100,7 @@ const MapView = (() => {
       }).addTo(map);
       routes.push(lbl);
     }
-    addRoute3d(points, color);
+    addRoute3d(points, color, weight, op);
     return polyline;
   }
 
@@ -112,14 +118,15 @@ const MapView = (() => {
   }
 
   function clearRoutes() {
-    routes.forEach(r => map.removeLayer(r)); routes = [];
+    routes.forEach(r => { try { map.removeLayer(r); } catch {} }); routes = [];
     mlRouteLayers.forEach(id => { try { if (mlMap) { mlMap.removeLayer(id); mlMap.removeSource(id); } } catch {} });
     mlRouteLayers = [];
     routeData = [];
+    if (window.__ml_lineLayer) window.__ml_lineLayer.lines = [];
   }
   function clearMarkers() {
-    markers.forEach(m => map.removeLayer(m)); markers = [];
-    mlMarkers.forEach(m => m.remove()); mlMarkers = [];
+    markers.forEach(m => { try { map.removeLayer(m); } catch {} }); markers = [];
+    mlMarkers.forEach(m => { try { m.remove(); } catch {} }); mlMarkers = [];
     markerData = [];
   }
   function clearAll() { clearRoutes(); clearMarkers(); hideStopMarkers(); hideBikeMarkers(); hideRouteStopMarkers(); }

@@ -53,6 +53,28 @@ const Store = (() => {
     return [];
   }
 
+  // --- Journey state persistence (4-hour TTL) ---
+  const JOURNEY_KEY = 'lt_activeTrip';
+  const JOURNEY_TTL = 4 * 3600 * 1000;
+
+  function saveJourneyState(state) {
+    set(JOURNEY_KEY, { ...state, _savedAt: Date.now() });
+  }
+
+  function loadJourneyState() {
+    const data = get(JOURNEY_KEY);
+    if (!data) return null;
+    if (Date.now() - (data._savedAt || 0) > JOURNEY_TTL) {
+      localStorage.removeItem(JOURNEY_KEY);
+      return null;
+    }
+    return data;
+  }
+
+  function clearJourneyState() {
+    localStorage.removeItem(JOURNEY_KEY);
+  }
+
   function getSettings() {
     const defaults = { timeMode: 'now', time: '', date: '', modes: [] };
     return { ...defaults, ...(get(KEYS.settings) || {}) };
@@ -76,5 +98,5 @@ const Store = (() => {
 
   function isLineSaved(lineId) { return getSavedLines().some(l => l.id === lineId); }
 
-  return { getFavorites, saveFavorites, addFavorite, removeFavorite, isFavorite, clearFavorites, getRecent, addRecent, clearRecent, getSettings, saveSettings, getSavedLines, saveSavedLines, toggleSavedLine, isLineSaved };
+  return { getFavorites, saveFavorites, addFavorite, removeFavorite, isFavorite, clearFavorites, getRecent, addRecent, clearRecent, getSettings, saveSettings, getSavedLines, saveSavedLines, toggleSavedLine, isLineSaved, saveJourneyState, loadJourneyState, clearJourneyState };
 })();

@@ -3,6 +3,7 @@
 
   let fromInput, toInput, resultsPanel;
   let departuresTimer = null;
+  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
 
   const journeyAutocomplete = {
     init() {
@@ -16,26 +17,55 @@
     _setup(input, suggestionsId, onSelect) {
       const el = document.getElementById(suggestionsId);
       let timeout;
+
+      async function renderSuggestions(q) {
+        let geoResults = [], favs = [], recents = [];
+        if (q.length >= 2) { try { geoResults = await Geocoder.search(q); } catch {} }
+        try { favs = Store.getFavorites().filter(f => f.label.toLowerCase().includes(q.toLowerCase())); } catch {}
+        try { recents = Store.getRecent().filter(r => r.label.toLowerCase().includes(q.toLowerCase())); } catch {}
+
+        if (q.length === 0) {
+          const last5 = (recents || []).slice(0, 5);
+          el.innerHTML = '';
+          if (last5.length) {
+            el.innerHTML += '<div class="sug-header">🕐 Recent searches</div>';
+            el.innerHTML += last5.map(r =>
+              '<div class="suggestion-item recent-item" data-label="'+esc(r.label)+'" data-lat="'+r.lat+'" data-lon="'+r.lon+'" data-type="'+(r.type||'')+'"><span class="sug-type">🕐</span><span class="sug-label">'+esc(r.label)+'</span><span class="sug-sub">Recent</span></div>'
+            ).join('');
+            el.innerHTML += '<div class="suggestion-item clear-recent-btn" style="border-bottom:none;color:var(--text2);font-size:10px;justify-content:center;border-top:1px solid #333">✕ Clear recent searches</div>';
+          }
+          el.classList.toggle('active', el.children.length > 0);
+          return;
+        }
+
+        el.innerHTML = '';
+        if (favs.length) {
+          el.innerHTML += favs.map(f =>
+            '<div class="suggestion-item fav-item" data-label="'+esc(f.label)+'" data-lat="'+f.lat+'" data-lon="'+f.lon+'" data-type="fav"><span class="sug-type">⭐</span><span class="sug-label">'+esc(f.label)+'</span><span class="sug-sub">Saved place</span></div>'
+          ).join('');
+        }
+        if (recents.length) {
+          el.innerHTML += recents.map(r =>
+            '<div class="suggestion-item recent-item" data-label="'+esc(r.label)+'" data-lat="'+r.lat+'" data-lon="'+r.lon+'" data-type="'+(r.type||'')+'"><span class="sug-type">🕐</span><span class="sug-label">'+esc(r.label)+'</span><span class="sug-sub">Recent</span></div>'
+          ).join('');
+        }
+        el.innerHTML += geoResults.map(r =>
+          '<div class="suggestion-item" data-label="'+esc(r.label)+'" data-lat="'+r.lat+'" data-lon="'+r.lon+'" data-type="'+r.type+'"><span class="sug-type">'+(r.type === 'stop' ? '🚏' : '📍')+'</span><span class="sug-label">'+esc(r.label)+'</span><span class="sug-sub">'+esc(r.fullLabel || '').substring(0, 100)+'</span></div>'
+        ).join('');
+        el.classList.toggle('active', el.children.length > 0);
+      }
+
+      input.addEventListener('focus', () => {
+        const q = input.value.trim();
+        if (q.length === 0) renderSuggestions('');
+      });
+
       input.addEventListener('input', () => {
         clearTimeout(timeout);
         const q = input.value.trim();
+        if (q.length === 0) { renderSuggestions(''); return; }
         if (q.length < 2) { el.innerHTML = ''; el.classList.remove('active'); return; }
-        timeout = setTimeout(async () => {
-          let geoResults = [], favs = [];
-          try { geoResults = await Geocoder.search(q); } catch {}
-          try { favs = Store.getFavorites().filter(f => f.label.toLowerCase().includes(q.toLowerCase())); } catch {}
-          console.log('Geocoder results for "'+q+'":', geoResults && geoResults.length ? geoResults.map(r=>r.label) : 'empty');
-          el.innerHTML = '';
-          if (favs.length) {
-            el.innerHTML += favs.map(f =>
-              '<div class="suggestion-item fav-item" data-label="'+f.label+'" data-lat="'+f.lat+'" data-lon="'+f.lon+'" data-type="fav"><span class="sug-type">⭐</span><span class="sug-label">'+f.label+'</span><span class="sug-sub">Saved place</span></div>'
-            ).join('');
-          }
-          el.innerHTML += geoResults.map(r =>
-            '<div class="suggestion-item" data-label="'+r.label+'" data-lat="'+r.lat+'" data-lon="'+r.lon+'" data-type="'+r.type+'"><span class="sug-type">'+(r.type === 'stop' ? '🚏' : '📍')+'</span><span class="sug-label">'+r.label+'</span><span class="sug-sub">'+(r.fullLabel || '').substring(0, 100)+'</span></div>'
-          ).join('');
-          el.classList.toggle('active', el.children.length > 0);
-        }, 200);
+        timeout = setTimeout(() => renderSuggestions(q), 200);
       });
 
       el.addEventListener('click', (e) => {
@@ -43,8 +73,13 @@
         if (!item) return;
         e.preventDefault();
         e.stopPropagation();
+        if (item.classList.contains('clear-recent-btn')) {
+          Store.clearRecent();
+          renderSuggestions(input.value.trim());
+          return;
+        }
         input.value = item.dataset.label;
-        const val = { label: item.dataset.label, lat: parseFloat(item.dataset.lat), lon: parseFloat(item.dataset.lon), type: item.dataset.type };
+        const val = { label: item.dataset.label, lat: parseFloat(item.dataset.lat), lon: parseFloat(item.dataset.lon), type: item.dataset.type || '' };
         onSelect(val);
         Store.addRecent(val);
         el.innerHTML = '';
@@ -163,6 +198,10 @@
     if (!journeys || !journeys.fastest) { UI.showError('No routes found. Try different locations or modes.'); return; }
     const { fastest, cheapest, balanced } = journeys;
 
+    function hasDisruption(journey) {
+      return journey && journey.legs && journey.legs.some(l => l.disruption);
+    }
+
     const renderCard = (journey, key, label, icon, color, isDefault) => {
       const durMins = journey.duration;
       const hrs = Math.floor(durMins / 60);
@@ -170,22 +209,36 @@
       const durStr = hrs > 0 ? hrs+'h '+mins+'m' : mins+' min';
       const fareStr = journey.fare != null ? '£'+journey.fare.toFixed(2) :
         journey.estimatedFare != null ? '~£'+journey.estimatedFare.toFixed(2) : '-';
+      let fareTitle = '';
+      if (journey.fareBreakdown) {
+        const fb = journey.fareBreakdown;
+        const parts = [];
+        if (fb.peak != null) parts.push(fb.peak ? 'Peak' : 'Off-peak');
+        if (fb.ticketType) parts.push(fb.ticketType);
+        if (fb.zones && fb.zones.length) parts.push('Zone ' + fb.zones.join(','));
+        fareTitle = parts.join(' · ');
+      }
       const start = journey.startTime ? new Date(journey.startTime).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '-';
       const end = journey.arrivalTime ? new Date(journey.arrivalTime).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '-';
       const legIcons = journey.legs.map(l => Router.getModeIcon(l.mode)).join('');
       const legNames = journey.legs.map(l => l.modeName).join(', ');
       const walkDist = journey.walkDuration > 0 ? journey.walkDuration+' min walk' : '';
+      const disruptCls = hasDisruption(journey) ? journey.legs.find(l => l.disruption).disruption.cls : '';
+      const disruptText = hasDisruption(journey) ? journey.legs.find(l => l.disruption).disruption.text : '';
 
       return '<div class="journey-card '+(isDefault ? 'active' : '')+'" data-journey-index="'+key+'">'+
         '<div class="jc-header" style="border-left-color:'+color+'">'+
           '<span class="jc-badge" style="background:'+color+'">'+icon+'</span>'+
           '<span class="jc-label">'+label+'</span>'+
           '<span class="jc-time">'+durStr+'</span>'+
-          '<span class="jc-fare">'+fareStr+'</span>'+
+          (disruptText ? '<span class="jc-disrupt '+disruptCls+'" title="'+esc(disruptText)+'">⚠️</span>' : '')+
+          '<span class="jc-fare" '+(fareTitle ? 'title="'+esc(fareTitle)+'" style="cursor:help"' : '')+'>'+fareStr+'</span>'+
         '</div>'+
         '<div class="jc-body">'+
           '<div class="jc-times">'+start+' \u2192 '+end+'</div>'+
           '<div class="jc-modes">'+legIcons+' <span class="jc-mode-text">'+legNames+'</span></div>'+
+          (disruptText ? '<div class="jc-disrupt-msg '+disruptCls+'">⚠️ '+esc(disruptText)+'</div>' : '')+
+          (fareTitle ? '<div class="jc-fare-detail">'+esc(fareTitle)+'</div>' : '')+
           '<div class="jc-meta">'+
             '<span>'+journey.transfers+' transfer'+(journey.transfers !== 1 ? 's' : '')+'</span>'+
             (walkDist ? '<span>🚶 '+walkDist+'</span>' : '')+
@@ -197,17 +250,19 @@
             const arrTime = leg.arrivalTime ? new Date(leg.arrivalTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
             const timeStr = depTime && arrTime ? depTime+' \u2192 '+arrTime : '';
             const dirStr = leg.direction ? (leg.direction.startsWith('towards') ? leg.direction : 'towards '+leg.direction) : '';
-            const locStr = leg.from && leg.to && leg.mode !== 'walking' ? '<span class="step-loc">'+leg.from.name+' \u2192 '+leg.to.name+'</span>' : '';
+            const locStr = leg.from && leg.to && leg.mode !== 'walking' ? '<span class="step-loc">'+esc(leg.from.name)+' \u2192 '+esc(leg.to.name)+'</span>' : '';
             const stopCount = leg.stops && leg.stops.length ? leg.stops.length+' stop'+(leg.stops.length !== 1 ? 's' : '') : '';
             const platStr = leg.platformName ? 'Platform '+leg.platformName : '';
             const walkDetail = leg.mode === 'walking' && leg.detail ? leg.detail : '';
+            const disruptMsg = leg.disruption ? '<div class="step-disrupt '+leg.disruption.cls+'">⚠️ '+esc(leg.disruption.text)+'</div>' : '';
             const parts = ['<div class="step">'+
               '<div class="step-icon" style="background:'+Router.getModeColor(leg.mode)+'">'+Router.getModeIcon(leg.mode)+'</div>'+
               '<div class="step-detail">'+
-                '<div class="step-header">'+(leg.mode === 'walking' ? 'Walk' : leg.modeName+' '+(leg.routeName || ''))+' '+(dirStr ? '<span class="step-dir">'+dirStr+'</span>' : '')+' <span class="step-dur">'+leg.duration+' min</span></div>'+
+                '<div class="step-header">'+(leg.mode === 'walking' ? 'Walk' : leg.modeName+' '+(leg.routeName || ''))+' '+(dirStr ? '<span class="step-dir">'+esc(dirStr)+'</span>' : '')+' <span class="step-dur">'+leg.duration+' min</span></div>'+
                 (locStr ? '<div class="step-loc-row">'+locStr+'</div>' : '')+
-                (walkDetail ? '<div class="step-instruction">'+walkDetail+'</div>' : '')+
-                (leg.instruction && leg.mode !== 'walking' ? '<div class="step-instruction">'+leg.instruction+'</div>' : '')+
+                (walkDetail ? '<div class="step-instruction">'+esc(walkDetail)+'</div>' : '')+
+                (leg.instruction && leg.mode !== 'walking' ? '<div class="step-instruction">'+esc(leg.instruction)+'</div>' : '')+
+                (disruptMsg)+
                 '<div class="step-meta">'+
                   (timeStr ? '<span>'+timeStr+'</span>' : '')+
                   (stopCount ? '<span>'+stopCount+'</span>' : '')+
@@ -234,15 +289,144 @@
       '</div>';
     };
 
-    resultsPanel.innerHTML = '<div class="results-header">'+
+    const featured = [fastest, cheapest, balanced].filter(Boolean);
+    const extraFeatured = [];
+    if (journeys.walkingJourney && !featured.includes(journeys.walkingJourney)) extraFeatured.push(journeys.walkingJourney);
+    const extraSet = new Set(extraFeatured);
+    const remainder = (journeys.all || []).filter(j => !featured.includes(j) && !extraSet.has(j));
+
+    let html = '<div class="results-header">'+
       '🏆 Best Routes'+
       '<button id="results-close-btn" class="results-close-btn" title="Close results"><span class="ic" data-ic="close"></span></button>'+
       '<button class="trip-start-btn" id="trip-start-btn">▶ Start Trip</button>'+
       '<button class="trip-end-btn" style="display:none" id="trip-end-btn">⏹ End Trip</button>'+
-    '</div>'+
-    renderCard(cheapest, 'cheapest', '💰 Cheapest', '💰', '#00a94f', false)+
-    renderCard(fastest, 'fastest', '⚡ Fastest', '⚡', '#0019a8', false)+
-    renderCard(balanced, 'balanced', '🧠 Smartest', '🧠', '#e32017', false);
+    '</div>';
+    if (fastest && cheapest && balanced) {
+      const allSame = fastest === cheapest && cheapest === balanced;
+      if (allSame) {
+        const isWalk = fastest.legs.every(l => l.mode === 'walking');
+        const durMins = fastest.duration;
+        const hrs = Math.floor(durMins / 60);
+        const mins = durMins % 60;
+        const durStr = hrs > 0 ? hrs+'h '+mins+'m' : mins+' min';
+        const distStr = fastest.legs[0] && fastest.legs[0].instruction ? fastest.legs[0].instruction : '';
+        html += '<div class="journey-card active" data-journey-index="fastest">'+
+          '<div class="jc-header" style="border-left-color:'+(isWalk ? '#666' : '#fcbb03')+'">'+
+            '<span class="jc-badge" style="background:'+(isWalk ? '#666' : '#fcbb03')+'">'+(isWalk ? '🚶' : '🚲')+'</span>'+
+            '<span class="jc-label">'+(isWalk ? 'Walking' : 'Cycling')+'</span>'+
+            '<span class="jc-time">'+durStr+'</span>'+
+            '<span class="jc-fare">Free</span>'+
+          '</div>'+
+          '<div class="jc-body"><div class="jc-modes"><span class="jc-mode-text">'+(distStr ? distStr : (isWalk ? 'Walk the whole way' : 'Cycle the whole way'))+'</span></div></div>'+
+          '<div class="jc-steps" style="display:none">'+
+            fastest.legs.map((leg, li) => {
+              const walkD = isWalk ? (leg.detail || leg.instruction || '') : '';
+              const ic = isWalk ? '🚶' : '🚲';
+              let stepHtml = '<div class="step"><div class="step-icon" style="background:'+(isWalk ? '#666' : '#fcbb03')+'">'+ic+'</div><div class="step-detail"><div class="step-header">'+(isWalk ? 'Walk' : 'Cycle')+' <span class="step-dur">'+leg.duration+' min</span></div>'+(walkD ? '<div class="step-instruction">'+esc(walkD)+'</div>' : '');
+              if (isWalk && leg.walkSteps && leg.walkSteps.length) {
+                stepHtml += '<div class="walk-steps">' + leg.walkSteps.map(s =>
+                  '<div class="walk-step"><span class="walk-step-dir">'+(s.modifier==='turn-left'?'⬅':s.modifier==='turn-right'?'➡':s.modifier==='uturn'?'↩':'⬆')+'</span><span class="walk-step-text">'+esc(s.instruction||'Walk')+'</span><span class="walk-step-dist">'+Math.round(s.distance)+'m</span></div>'
+                ).join('') + '</div>';
+              }
+              stepHtml += '</div></div>';
+              return stepHtml;
+            }).join('')+
+          '</div>'+
+        '</div>';
+      } else {
+        html += renderCard(cheapest, 'cheapest', '💰 Cheapest', '💰', '#00a94f', false);
+        html += renderCard(fastest, 'fastest', '⚡ Fastest', '⚡', '#0019a8', false);
+        html += renderCard(balanced, 'balanced', '🧠 Smartest', '🧠', '#e32017', false);
+      }
+    }
+    extraFeatured.forEach(j => {
+      const durMins = j.duration;
+      const hrs = Math.floor(durMins / 60);
+      const mins = durMins % 60;
+      const durStr = hrs > 0 ? hrs+'h '+mins+'m' : mins+' min';
+      const distStr = j.legs[0] && j.legs[0].instruction ? j.legs[0].instruction : '';
+      html += '<div class="journey-card" data-journey-index="walking">'+
+        '<div class="jc-header" style="border-left-color:#666">'+
+          '<span class="jc-badge" style="background:#666">🚶</span>'+
+          '<span class="jc-label">Walking</span>'+
+          '<span class="jc-time">'+durStr+'</span>'+
+          '<span class="jc-fare">Free</span>'+
+        '</div>'+
+        '<div class="jc-body">'+
+          '<div class="jc-modes"><span class="jc-mode-text">'+(distStr ? distStr : 'Walk the whole way')+'</span></div>'+
+        '</div>'+
+        '<div class="jc-steps" style="display:none">'+
+          j.legs.map((leg, li) => {
+            const walkD = leg.detail || leg.instruction || '';
+            let stepHtml = '<div class="step"><div class="step-icon" style="background:#666">🚶</div><div class="step-detail"><div class="step-header">Walk <span class="step-dur">'+leg.duration+' min</span></div>'+(walkD ? '<div class="step-instruction">'+esc(walkD)+'</div>' : '');
+            if (leg.walkSteps && leg.walkSteps.length) {
+              stepHtml += '<div class="walk-steps">' + leg.walkSteps.map(s =>
+                '<div class="walk-step"><span class="walk-step-dir">'+(s.modifier==='turn-left'?'⬅':s.modifier==='turn-right'?'➡':s.modifier==='uturn'?'↩':'⬆')+'</span><span class="walk-step-text">'+esc(s.instruction||'Walk')+'</span><span class="walk-step-dist">'+Math.round(s.distance)+'m</span></div>'
+              ).join('') + '</div>';
+            }
+            stepHtml += '</div></div>';
+            return stepHtml;
+          }).join('')+
+        '</div>'+
+      '</div>';
+    });
+    if (remainder.length) {
+      html += '<div class="all-routes-section"><button class="all-routes-toggle">All ' + journeys.all.length + ' routes <span class="ic" data-ic="chevron_down"></span></button><div class="all-routes-list" style="display:none">' +
+        remainder.map((j, i) => {
+          const key = 'route_' + journeys.all.indexOf(j);
+          const durMins = j.duration;
+          const hrs = Math.floor(durMins / 60);
+          const mins = durMins % 60;
+          const durStr = hrs > 0 ? hrs+'h '+mins+'m' : mins+' min';
+          const start = j.startTime ? new Date(j.startTime).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '-';
+          const end = j.arrivalTime ? new Date(j.arrivalTime).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '-';
+          const legIcons = j.legs.map(l => Router.getModeIcon(l.mode)).join('');
+          const legNames = j.legs.map(l => l.modeName).join(', ');
+          const walkStr = j.walkDuration > 0 ? '🚶 '+j.walkDuration+'min' : '';
+          return '<div class="journey-card" data-journey-index="' + key + '">'+
+            '<div class="jc-header" style="border-left-color:#555">'+
+              '<span class="jc-label"># ' + (i + 1) + '</span>'+
+              '<span class="jc-time">' + durStr + '</span>'+
+              '<span class="jc-fare">' + j.transfers + ' trf</span>'+
+            '</div>'+
+            '<div class="jc-body">'+
+              '<div class="jc-times">' + start + ' → ' + end + '</div>'+
+              '<div class="jc-modes">' + legIcons + ' <span class="jc-mode-text">' + legNames + '</span></div>'+
+              (walkStr ? '<div class="jc-meta"><span>' + walkStr + '</span></div>' : '')+
+            '</div>'+
+            '<div class="jc-steps" style="display:none">' +
+              j.legs.map((leg, li) => {
+                const depTime2 = leg.departureTime ? new Date(leg.departureTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+                const arrTime2 = leg.arrivalTime ? new Date(leg.arrivalTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
+                const timeStr2 = depTime2 && arrTime2 ? depTime2+' → '+arrTime2 : '';
+                const dirStr2 = leg.direction ? (leg.direction.startsWith('towards') ? leg.direction : 'towards '+leg.direction) : '';
+                const locStr2 = leg.from && leg.to && leg.mode !== 'walking' ? '<span class="step-loc">'+esc(leg.from.name)+' → '+esc(leg.to.name)+'</span>' : '';
+                const platStr2 = leg.platformName ? 'Platform '+leg.platformName : '';
+                const walkDetail2 = leg.mode === 'walking' && leg.detail ? leg.detail : '';
+                const stopCount2 = leg.stops && leg.stops.length ? leg.stops.length+' stops' : '';
+                const disrupt2 = leg.disruption ? '<div class="step-disrupt '+leg.disruption.cls+'">⚠️ '+esc(leg.disruption.text)+'</div>' : '';
+                return '<div class="step" data-leg="'+li+'">'+
+                  '<div class="step-icon" style="background:'+Router.getModeColor(leg.mode)+'">'+Router.getModeIcon(leg.mode)+'</div>'+
+                  '<div class="step-detail">'+
+                    '<div class="step-header">'+(leg.mode === 'walking' ? 'Walk' : leg.modeName+' '+(leg.routeName || ''))+' '+(dirStr2 ? '<span class="step-dir">'+esc(dirStr2)+'</span>' : '')+' <span class="step-dur">'+leg.duration+' min</span></div>'+
+                    (locStr2 ? '<div class="step-loc-row">'+locStr2+'</div>' : '')+
+                    (walkDetail2 ? '<div class="step-instruction">'+esc(walkDetail2)+'</div>' : '')+
+                    (leg.instruction && leg.mode !== 'walking' ? '<div class="step-instruction">'+esc(leg.instruction)+'</div>' : '')+
+                    disrupt2+
+                    '<div class="step-meta">'+
+                      (timeStr2 ? '<span>'+timeStr2+'</span>' : '')+
+                      (stopCount2 ? '<span>'+stopCount2+'</span>' : '')+
+                      (platStr2 ? '<span>'+platStr2+'</span>' : '')+
+                    '</div>'+
+                  '</div>'+
+                '</div>';
+              }).join('') +
+            '</div>'+
+          '</div>';
+        }).join('') +
+      '</div></div>';
+    }
+    resultsPanel.innerHTML = html;
 
     const startBtn = document.getElementById('trip-start-btn');
     const endBtn = document.getElementById('trip-end-btn');
@@ -255,9 +439,15 @@
     startBtn.onclick = () => document.dispatchEvent(new CustomEvent('start-trip', { detail: { key: resultsPanel.querySelector('.journey-card.active')?.dataset?.journeyIndex || 'fastest' } }));
     endBtn.onclick = () => document.dispatchEvent(new Event('end-trip'));
 
+    function getJourneyByKey(k) {
+      if (k === 'walking' && journeys.walkingJourney) return journeys.walkingJourney;
+      return journeys[k] || (journeys.all && journeys.all[parseInt(k.replace('route_', ''), 10)]);
+    }
+
     resultsPanel.querySelectorAll('.journey-card').forEach(card => {
       const jKey = card.dataset.journeyIndex;
-      const journey = journeys[jKey];
+      const journey = getJourneyByKey(jKey);
+      if (!journey) return;
       card.querySelector('.jc-header').addEventListener('click', () => {
         const wasActive = card.classList.contains('active');
         resultsPanel.querySelectorAll('.journey-card').forEach(c2 => {
@@ -314,6 +504,18 @@
         });
       });
     });
+
+    const toggleBtn = document.querySelector('.all-routes-toggle');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        const list = document.querySelector('.all-routes-list');
+        if (list) {
+          const hidden = list.style.display === 'none';
+          list.style.display = hidden ? 'block' : 'none';
+          toggleBtn.innerHTML = 'All ' + journeys.all.length + ' routes <span class="ic" data-ic="' + (hidden ? 'chevron_up' : 'chevron_down') + '"></span>';
+        }
+      });
+    }
   };
 
   /* Hide panels */

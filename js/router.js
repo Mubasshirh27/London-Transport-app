@@ -122,7 +122,7 @@ const Router = (() => {
       const legs = (j.legs || []).map(l => {
         const mode = l.mode ? l.mode.id || l.mode.name : 'walking';
         const path = extractPath(l);
-      return {
+        return {
         mode: mode.toLowerCase(),
         modeName: l.mode ? l.mode.name : 'Walking',
         duration: l.duration || 0,
@@ -133,6 +133,7 @@ const Router = (() => {
         from: l.departurePoint ? { lat: l.departurePoint.lat, lon: l.departurePoint.lon, name: l.departurePoint.commonName, id: l.departurePoint.id } : (l.from ? { lat: l.from.lat, lon: l.from.lon, name: l.from.name || l.from.commonName, id: l.from.id } : null),
         to: l.arrivalPoint ? { lat: l.arrivalPoint.lat, lon: l.arrivalPoint.lon, name: l.arrivalPoint.commonName, id: l.arrivalPoint.id } : (l.to ? { lat: l.to.lat, lon: l.to.lon, name: l.to.name || l.to.commonName, id: l.to.id } : null),
         routeName: l.route ? l.route.name : '',
+        lineId: (l.route && l.route.id) || (l.routeOptions && l.routeOptions[0] && l.routeOptions[0].lineId) || '',
         platformName: l.platformName || '',
         direction: l.direction || '',
         path,
@@ -148,6 +149,20 @@ const Router = (() => {
       const totalCost = j.fare?.totalCost != null ? j.fare.totalCost / 100 : null;
       const walkDuration = legs.filter(l => l.mode === 'walking').reduce((s, l) => s + l.duration, 0);
 
+      // Extract fare breakdown
+      let fareBreakdown = null;
+      if (j.fare && j.fare.fares && j.fare.fares.length) {
+        const fareEntry = j.fare.fares[0];
+        const tickets = (fareEntry.tickets || []);
+        const firstTicket = tickets[0] || null;
+        fareBreakdown = {
+          peak: firstTicket ? firstTicket.isPeak : null,
+          ticketType: firstTicket ? (firstTicket.type || '') : '',
+          zones: j.fare.zones || null,
+          caveats: (j.fare.caveats || []).map(c => c.text || c).filter(Boolean)
+        };
+      }
+
       return {
         duration: j.duration,
         startTime: j.startDateTime,
@@ -155,6 +170,7 @@ const Router = (() => {
         legs,
         fare: totalCost,
         estimatedFare: totalCost ?? estimateFare(legs),
+        fareBreakdown,
         walkDuration,
         transfers: legs.length - 1
       };
@@ -212,18 +228,18 @@ const Router = (() => {
       apiOpts.timeIs = timeMode === 'arrive' ? 'Arriving' : 'Departing';
     }
 
-    // Filter out 'walking' — TfL API doesn't accept it as a mode
-    const transitModes = opts.modes ? opts.modes.filter(m => m !== 'walking') : [];
+    // Filter out 'walking' and 'cycling' — TfL API doesn't accept them as mode params
+    const transitModes = opts.modes ? opts.modes.filter(m => m !== 'walking' && m !== 'cycling') : [];
     if (transitModes.length) {
       apiOpts.mode = transitModes.join(',');
     }
 
-    // Walking-only: use OSRM foot routing
+    // Valid coords needed for transit API too — validate early
+    const fromCoord = Api.parseCoord(from);
+    const toCoord = Api.parseCoord(to);
     if (!transitModes.length) {
-      const fromC = Api.parseCoord(from);
-      const toC = Api.parseCoord(to);
-      if (!fromC || !toC) return null;
-      const route = await Api.getWalkingRoute(fromC.lat, fromC.lon, toC.lat, toC.lon);
+      if (!fromCoord || !toCoord) return null;
+      const route = await Api.getWalkingRoute(fromCoord.lat, fromCoord.lon, toCoord.lat, toCoord.lon);
       if (!route) return null;
       const durMin = Math.max(1, Math.round(route.duration / 60));
       const fromName = typeof from === 'string' ? from : (from.label || 'From');
@@ -231,25 +247,43 @@ const Router = (() => {
       const leg = {
         mode: 'walking', modeName: 'Walking', duration: durMin,
         instruction: '', detail: '', departureTime: '', arrivalTime: '',
-        from: { lat: fromC.lat, lon: fromC.lon, name: fromName },
-        to: { lat: toC.lat, lon: toC.lon, name: toName },
+        from: { lat: fromCoord.lat, lon: fromCoord.lon, name: fromName },
+        to: { lat: toCoord.lat, lon: toCoord.lon, name: toName },
         routeName: '', platformName: '', direction: '',
-        path: route.coords, stops: []
+        path: route.coords, stops: [], walkSteps: route.steps || []
       };
       const j = { duration: durMin, startTime: '', arrivalTime: '', legs: [leg], fare: null, estimatedFare: null, walkDuration: durMin, transfers: 0 };
       return { fastest: j, cheapest: j, balanced: j, all: [j], raw: null, walkingOnly: true };
     }
 
-    const raw = await Api.getJourney(from, to, apiOpts);
-    const journeys = parseJourneys(raw);
+    // For raw text strings (place names), ensure we don't pass objects to URL
+    const fromStr = typeof from === 'string' ? from : (fromCoord ? `${fromCoord.lat},${fromCoord.lon}` : '');
+    const toStr = typeof to === 'string' ? to : (toCoord ? `${toCoord.lat},${toCoord.lon}` : '');
+    if (!fromStr || !toStr) return null;
+
+    apiOpts.nationalSearch = true;
+    apiOpts.alternativeWalking = true;
+    if (opts.walkingSpeed) apiOpts.walkingSpeed = opts.walkingSpeed;
+
+    const raw = await Api.getJourney(fromStr, toStr, apiOpts);
+    const journeys = parseJourneys(raw).filter(j => j.legs.every(l => l.mode !== 'cycling'));
     if (!journeys.length) return null;
 
-    const fastest = journeys.reduce((a, b) => a.duration < b.duration ? a : b);
-    const cheapest = journeys.reduce((a, b) => (a.estimatedFare ?? 999) < (b.estimatedFare ?? 999) ? a : b);
-    const byBalance = [...journeys].sort((a, b) => (a.transfers - b.transfers) || (a.walkDuration - b.walkDuration));
-    const balanced = byBalance.find(j => j !== fastest && j !== cheapest) || byBalance[0];
+    const transitJourneys = journeys.filter(j => j.legs.some(l => l.mode !== 'walking'));
+    const walkOnly = journeys.find(j => j.legs.every(l => l.mode === 'walking'));
 
-    return { fastest, cheapest, balanced, all: journeys, raw };
+    let fastest, cheapest, balanced;
+    if (transitJourneys.length) {
+      fastest = transitJourneys.reduce((a, b) => a.duration < b.duration ? a : b);
+      cheapest = transitJourneys.reduce((a, b) => (a.estimatedFare ?? 999) < (b.estimatedFare ?? 999) ? a : b);
+      const byBalance = [...transitJourneys].sort((a, b) => (a.transfers - b.transfers) || (a.walkDuration - b.walkDuration));
+      balanced = byBalance.find(j => j !== fastest && j !== cheapest) || byBalance[0];
+    } else {
+      // Only walking available — show it
+      fastest = cheapest = balanced = walkOnly || journeys[0];
+    }
+
+    return { fastest, cheapest, balanced, all: journeys, raw, walkingJourney: walkOnly || null };
   }
 
   function getModeColor(mode) {
@@ -330,5 +364,31 @@ const Router = (() => {
     return routeName && routeName.toUpperCase().startsWith('N');
   }
 
-  return { plan, getModeColor, getModeIcon, parseJourneys, parseWktLineString, extractRoutePath, extractRouteStops, isNightRoute };
+  async function enrichLegPath(leg) {
+    if (!leg || leg.mode === 'walking' || leg.mode === 'cycling' || !leg.routeName || !leg.from || !leg.to) return;
+    // Skip if we already have a good path (>2 points) from the journey response
+    if (leg.path && leg.path.length >= 3) return;
+    const lineId = leg.routeName;
+    const dirsToTry = leg.direction ? [leg.direction] : [];
+    dirsToTry.push('inbound', 'outbound');
+    for (const dir of dirsToTry) {
+      try {
+        const data = await Api.getLineRoutes(lineId, dir);
+        if (!data || !data.lineStrings || !data.lineStrings.length) continue;
+        const enriched = extractRoutePath(data);
+        if (enriched.length >= 2) { leg.path = enriched; }
+        const stops = extractRouteStops(data);
+        if (stops.length >= 2) { leg.stops = stops; }
+        return; // Success — stop trying directions
+      } catch {}
+    }
+  }
+
+  async function enrichJourneyPaths(journey) {
+    if (!journey || !journey.legs) return;
+    const transitLegs = journey.legs.filter(l => l.mode !== 'walking' && l.mode !== 'cycling');
+    await Promise.allSettled(transitLegs.map(l => enrichLegPath(l)));
+  }
+
+  return { plan, getModeColor, getModeIcon, parseJourneys, parseWktLineString, extractRoutePath, extractRouteStops, isNightRoute, enrichLegPath, enrichJourneyPaths };
 })();

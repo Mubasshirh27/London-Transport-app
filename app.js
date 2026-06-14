@@ -143,6 +143,29 @@
           return;
         }
         activeJourneys = result;
+
+        // Attach disruption info to each leg
+        try {
+          const lineStatuses = await Status.fetchAll();
+          if (lineStatuses && lineStatuses.length) {
+            const attachDisruptions = (j) => {
+              if (!j || !j.legs) return;
+              j.legs.forEach(leg => {
+                if (leg.mode === 'walking' || !leg.lineId) return;
+                const status = lineStatuses.find(s => s.id.toLowerCase() === leg.lineId.toLowerCase());
+                if (status && status.statusCls !== 'good') {
+                  leg.disruption = { cls: status.statusCls, text: status.statusText, reason: status.reason };
+                }
+              });
+            };
+            attachDisruptions(result.fastest);
+            attachDisruptions(result.cheapest);
+            attachDisruptions(result.balanced);
+            if (result.walkingJourney) attachDisruptions(result.walkingJourney);
+            (result.all || []).forEach(attachDisruptions);
+          }
+        } catch {}
+
         UI.showResults(result);
 
         const bestJourney = result.all[0];
@@ -348,10 +371,38 @@
         doToggle();
       });
 
+      // --- Notification Setup ---
+      // Request permission
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().catch(() => {});
+      }
+
+      // "Time to Leave" notification
+      if (window._ttlTimer) { clearTimeout(window._ttlTimer); window._ttlTimer = null; }
+      const firstLeg = journey.legs[0];
+      if (firstLeg && firstLeg.departureTime && firstLeg.mode !== 'walking') {
+        const depMs = new Date(firstLeg.departureTime).getTime();
+        const nowMs = Date.now();
+        const leadMs = Math.max(0, depMs - nowMs - 5 * 60 * 1000);
+        if (leadMs > 0 && leadMs < 3600 * 1000) {
+          window._ttlTimer = setTimeout(() => {
+            try {
+              if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('Time to leave!', { body: 'Your ' + (firstLeg.modeName || 'transit') + ' from ' + (firstLeg.from ? firstLeg.from.name : '') + ' departs at ' + new Date(firstLeg.departureTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) });
+              }
+            } catch {}
+          }, leadMs);
+        }
+      }
+
+      window._notifiedAlight = false;
+
     });
 
     document.addEventListener('end-trip', () => {
       if (tripWatchId !== null) { navigator.geolocation.clearWatch(tripWatchId); tripWatchId = null; }
+      if (window._ttlTimer) { clearTimeout(window._ttlTimer); window._ttlTimer = null; }
+      window._notifiedAlight = false;
       tripActiveKey = null;
       tripLegIndex = -1;
       lastLegTransitionTime = 0;
@@ -680,6 +731,7 @@
 
       // --- Re-render map routes only when leg index changes ---
       if (tripLegIndex !== lastRenderedLegIndex) {
+        window._notifiedAlight = false;
         renderTripRoutes();
         lastRenderedLegIndex = tripLegIndex;
       }
@@ -691,6 +743,23 @@
           const dist = distanceDeg(lat, lon, finalLeg.to.lat, finalLeg.to.lon);
           if (dist < 0.00018) tripArrived = true; // ~15-20m threshold
         }
+      }
+
+      // --- Alight notification for transit stops ---
+      if (!tripArrived && !window._notifiedAlight) {
+        const cur = legs[tripLegIndex];
+        if (cur && cur.mode !== 'walking' && cur.to && cur.to.lat != null) {
+          const dist = distanceDeg(lat, lon, cur.to.lat, cur.to.lon);
+          if (dist < 0.0018 && tripLegIndex < legs.length - 2) {
+            window._notifiedAlight = true;
+            try {
+              if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('Alight here', { body: 'Next stop: ' + (cur.to.name || 'your stop') });
+              }
+            } catch {}
+          }
+        }
+        if (cur && cur.mode === 'walking') window._notifiedAlight = false;
       }
 
       // --- Deviation Detection & Auto-Reroute ---
@@ -789,6 +858,29 @@
           if (plat) html += `<div style="color:#ffa500;font-size:10px">Platform ${plat}</div>`;
           if (dir) html += `<div style="color:var(--text2);font-size:10px">→ ${dir}</div>`;
           html += `<div style="color:var(--text2);font-size:10px">${dep ? dep : ''}${dep && arr ? ' → ' : ''}${arr ? arr : ''}</div>`;
+
+          // Walking turn-by-turn guidance
+          if (cur.mode === 'walking' && cur.walkSteps && cur.walkSteps.length) {
+            const walkSteps = cur.walkSteps;
+            let bestIdx = 0;
+            let bestDist = Infinity;
+            for (let i = 0; i < walkSteps.length; i++) {
+              const step = walkSteps[i];
+              if (step.coords && step.coords.length) {
+                for (const c of step.coords) {
+                  const d = Math.sqrt((lat - c[0]) ** 2 + (lon - c[1]) ** 2);
+                  if (d < bestDist) { bestDist = d; bestIdx = i; }
+                }
+              }
+            }
+            const ws = walkSteps[bestIdx];
+            const wn = walkSteps[bestIdx + 1];
+            if (ws) {
+              const dirArrow = ws.modifier === 'turn-left' ? '⬅ ' : ws.modifier === 'turn-right' ? '➡ ' : ws.modifier === 'uturn' ? '↩ ' : '⬆ ';
+              html += `<div style="margin-top:3px;padding:3px 6px;background:var(--surface3);border-radius:4px;font-size:11px;font-weight:500">${dirArrow}${escapeHtml(ws.instruction || 'Walk')} <span style="font-weight:400;color:var(--text2);font-size:10px">(${Math.round(ws.distance)}m)</span></div>`;
+              if (wn) html += `<div style="margin-top:1px;font-size:10px;color:var(--text2)">Next: ${escapeHtml(wn.instruction || '')} (${Math.round(wn.distance)}m)</div>`;
+            }
+          }
         }
 
         if (nextLeg) {
@@ -986,6 +1078,83 @@
     });
 
     UI._setupBikeAutocomplete = function() { setupBikeAutocomplete(); };
+
+    // --- Transit Layer Overlay ---
+    window.__transitLayerCache = {};
+    window.__transitLayerRoutes = {};
+
+    function setupTransitLayers() {
+      const legend = document.getElementById('map-legend');
+      const toggles = document.getElementById('layer-toggles');
+      if (!toggles) return;
+
+      // Show layer toggles when map legend is visible (map overlay open, not trip mode)
+      const observer = new MutationObserver(() => {
+        toggles.classList.toggle('hidden', legend && legend.classList.contains('hidden'));
+      });
+      if (legend) observer.observe(legend, { attributes: true, attributeFilter: ['class'] });
+      toggles.classList.toggle('hidden', legend && legend.classList.contains('hidden'));
+
+      document.querySelectorAll('.layer-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const mode = btn.dataset.mode;
+          const active = btn.classList.toggle('active');
+          if (!active) {
+            // Remove layer
+            const layers = window.__transitLayerRoutes[mode];
+            if (layers) {
+              (layers.leaflet || []).forEach(l => { try { l.remove(); } catch {} });
+              (layers.mlIds || []).forEach(id => { try { if (typeof map3dInstance !== 'undefined' && map3dInstance) { map3dInstance.removeLayer(id); map3dInstance.removeSource(id); } } catch {} });
+              delete window.__transitLayerRoutes[mode];
+            }
+            return;
+          }
+          btn.textContent = '...';
+          try {
+            const lines = await Status.fetchAll();
+            const modeLines = (lines || []).filter(l => l.mode === mode);
+            if (!modeLines.length) { btn.textContent = 'None'; setTimeout(() => { btn.textContent = mode.charAt(0).toUpperCase() + mode.slice(1).replace('-', ' '); }, 1500); btn.classList.remove('active'); return; }
+
+            const color = btn.style.background || '#555';
+            const routeLayers = { leaflet: [], mlIds: [] };
+            let fetched = 0;
+            const prevMlCount = window.__ml_lineLayer ? window.__ml_lineLayer.lines.length : 0;
+
+            for (const line of modeLines.slice(0, 20)) {
+              const cacheKey = mode + '_' + line.id;
+              let path = window.__transitLayerCache[cacheKey];
+              if (!path) {
+                try {
+                  const data = await Api.getLineRoutes(line.id, 'inbound');
+                  const coords = Router.extractRoutePath(data);
+                  if (coords.length >= 2) {
+                    path = coords;
+                    window.__transitLayerCache[cacheKey] = coords;
+                  }
+                } catch {}
+              }
+              if (path && path.length >= 2) {
+                const layer = MapView.addRoute(path, color, '', 2, 0.35);
+                if (layer) routeLayers.leaflet.push(layer);
+                fetched++;
+              }
+            }
+
+            // Track the 3D layers added for this mode
+            const newMlCount = window.__ml_lineLayer ? window.__ml_lineLayer.lines.length : 0;
+            for (let i = prevMlCount; i < newMlCount; i++) {
+              routeLayers.mlIds.push(window.__ml_lineLayer.lines[i]);
+            }
+            window.__transitLayerRoutes[mode] = routeLayers;
+            btn.textContent = mode.charAt(0).toUpperCase() + mode.slice(1).replace('-', ' ') + ' (' + fetched + ')';
+          } catch {
+            btn.textContent = 'Error';
+            setTimeout(() => { btn.textContent = mode.charAt(0).toUpperCase() + mode.slice(1).replace('-', ' '); btn.classList.remove('active'); }, 2000);
+          }
+        });
+      });
+    }
+    setupTransitLayers();
 
     function setupBikeAutocomplete() {
       const input = document.getElementById('bike-search-input');

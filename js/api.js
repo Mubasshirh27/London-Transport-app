@@ -7,9 +7,8 @@ const Api = (() => {
   function rateLimited(fn) {
     if (rateLimitCount > 100) { rateLimitQueue = Promise.resolve(); rateLimitCount = 0; }
     rateLimitCount++;
-    const result = rateLimitQueue.then(() => fn()).then(r => new Promise(resolve => setTimeout(() => resolve(r), 200)));
-    rateLimitQueue = result.catch(() => new Promise(resolve => setTimeout(resolve, 200)));
-    return result;
+    rateLimitQueue = rateLimitQueue.then(() => fn()).then(r => new Promise(resolve => setTimeout(() => resolve(r), 200)));
+    return rateLimitQueue;
   }
 
   async function fetchTfl(endpoint, params = {}) {
@@ -53,7 +52,7 @@ const Api = (() => {
   }
 
   async function getStopArrivals(stopId) {
-    return rateLimited(() => fetchTfl(`/StopPoint/${stopId}/Arrivals`));
+    return rateLimited(() => fetchTfl(`/StopPoint/${encodeURIComponent(stopId)}/Arrivals`));
   }
 
   async function getNearbyStops(lat, lon, radius) {
@@ -82,16 +81,16 @@ const Api = (() => {
   }
 
   async function getLineRoutes(lineId, direction) {
-    return fetchTfl(`/Line/${lineId}/Route/Sequence/${direction || 'inbound'}`);
+    return fetchTfl(`/Line/${encodeURIComponent(lineId)}/Route/Sequence/${encodeURIComponent(direction || 'inbound')}`);
   }
 
   async function getWalkingRoute(fromLat, fromLon, toLat, toLon) {
     // Try OSM's dedicated foot routing server first, fallback to OSRM
     const servers = [
       // OSM foot server — specifically built for walking/foot routing
-      { url: `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${fromLon},${fromLat};${toLon},${toLat}?geometries=geojson&overview=full` },
+      { url: `https://routing.openstreetmap.de/routed-foot/route/v1/foot/${fromLon},${fromLat};${toLon},${toLat}?geometries=geojson&overview=full&steps=true` },
       // OSRM demo server — general-purpose with walking profile
-      { url: `https://router.project-osrm.org/route/v1/walking/${fromLon},${fromLat};${toLon},${toLat}?geometries=geojson&overview=full` }
+      { url: `https://router.project-osrm.org/route/v1/walking/${fromLon},${fromLat};${toLon},${toLat}?geometries=geojson&overview=full&steps=true` }
     ];
     for (const s of servers) {
       try {
@@ -100,10 +99,20 @@ const Api = (() => {
         const data = await res.json();
         if (data && data.code === 'Ok' && data.routes && data.routes[0]) {
           const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+          const steps = (data.routes[0].legs && data.routes[0].legs[0] && data.routes[0].legs[0].steps) || [];
           return {
             coords,
             distance: data.routes[0].distance,
-            duration: data.routes[0].duration
+            duration: data.routes[0].duration,
+            steps: steps.map(s => ({
+              instruction: s.maneuver ? s.maneuver.instruction : '',
+              name: s.name || '',
+              distance: s.distance || 0,
+              duration: s.duration || 0,
+              type: s.maneuver ? s.maneuver.type : '',
+              modifier: s.maneuver ? s.maneuver.modifier : '',
+              coords: s.geometry && s.geometry.coordinates ? s.geometry.coordinates.map(c => [c[1], c[0]]) : null
+            }))
           };
         }
       } catch {}
@@ -125,7 +134,7 @@ const Api = (() => {
   }
 
   async function getStopProperties(stopId) {
-    return rateLimited(() => fetchTfl(`/StopPoint/${stopId}`));
+    return rateLimited(() => fetchTfl(`/StopPoint/${encodeURIComponent(stopId)}`));
   }
 
   async function getMetaModes() {
@@ -164,25 +173,25 @@ const Api = (() => {
   }
 
   async function getLineStopPoints(lineId) {
-    return fetchTfl(`/Line/${lineId}/StopPoints`);
+    return fetchTfl(`/Line/${encodeURIComponent(lineId)}/StopPoints`);
   }
 
   async function getLineById(lineId) {
-    return fetchTfl(`/Line/${lineId}`);
+    return fetchTfl(`/Line/${encodeURIComponent(lineId)}`);
   }
 
   async function getLineTimetable(lineId, fromStopPointId, direction) {
     const params = {};
     if (direction) params.direction = direction;
-    return fetchTfl(`/Line/${lineId}/Timetable/${fromStopPointId}`, params);
+    return fetchTfl(`/Line/${encodeURIComponent(lineId)}/Timetable/${encodeURIComponent(fromStopPointId)}`, params);
   }
 
   async function getStopRoutes(stopId) {
-    return fetchTfl(`/StopPoint/${stopId}/Route`);
+    return fetchTfl(`/StopPoint/${encodeURIComponent(stopId)}/Route`);
   }
 
   async function getStopTimetable(stopId, lineId) {
-    return fetchTfl(`/StopPoint/${stopId}/Timetable/${lineId}`);
+    return fetchTfl(`/StopPoint/${encodeURIComponent(stopId)}/Timetable/${encodeURIComponent(lineId)}`);
   }
 
   return { fetchTfl, getJourney, getStopArrivals, getNearbyStops, searchStops, getLineStatus, getLineRoutes, getBikePoints, getDisruptions, getStopProperties, getMetaModes, parseCoord, getLineStopPoints, getLineById, geocodePostcode, searchPostcodes, getWalkingRoute, getLineTimetable, getStopRoutes, getStopTimetable, normalizeLineId };

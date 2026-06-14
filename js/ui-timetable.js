@@ -469,15 +469,22 @@
     const list = document.getElementById('departures-list');
     list.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
     panel.querySelector('h3').innerHTML = '📋 ' + stopName + ' Timetable <span class="stop-code">' + stopId + '</span>';
-    let routes = [], liveArrivals = [];
+    let routes = [], liveArrivals = [], routeModeMap = {};
     try {
       liveArrivals = await Stops.getArrivals(stopId);
-      if (liveArrivals.length) routes = [...new Set(liveArrivals.map(a => a.line).filter(Boolean))];
+      if (liveArrivals.length) {
+        routes = [...new Set(liveArrivals.map(a => a.line).filter(Boolean))];
+        liveArrivals.forEach(a => { if (a.line && a.mode) routeModeMap[a.line] = a.mode; });
+      }
     } catch (e) { console.log('[StopTimetable] Live arrivals error:', e); }
     if (!routes.length) {
       try {
         const stopData = await Api.getStopRoutes(stopId);
         if (stopData && stopData.stopRoutes && stopData.stopRoutes.length) {
+          stopData.stopRoutes.forEach(r => {
+            const id = r.lineId || r.routeId || r.id || r.name;
+            if (id) { routeModeMap[id] = r.mode || routeModeMap[id]; }
+          });
           routes = [...new Set(stopData.stopRoutes.map(r => r.lineId || r.routeId || r.id || r.name).filter(Boolean))];
         }
       } catch (e) { console.log('[StopTimetable] Stop routes API error:', e); }
@@ -486,10 +493,19 @@
       list.innerHTML = '<div class="no-data">No routes found for this stop</div><div style="padding:8px 12px;text-align:center"><button class="btn-secondary tt-back-btn">\u2190 Back to Live</button></div>';
       return;
     }
+    function _guessMode(lineName) {
+      const m = routeModeMap[lineName];
+      if (m) return m;
+      const n = (lineName || '').toLowerCase();
+      if (/^(bakerloo|central|circle|district|hammersmith|jubilee|metropolitan|northern|piccadilly|victoria|waterloo)/.test(n)) return 'tube';
+      if (n === 'dlr' || n === 'london overground' || n.includes('elizabeth')) return n === 'dlr' ? 'dlr' : n.includes('overground') ? 'overground' : 'elizabeth-line';
+      if (n === 'tram') return 'tram';
+      return 'tube';
+    }
     let html = '<div class="tt-section"><div class="tt-header">\u25a0 Routes at this stop</div></div><div class="tt-stops-routes">';
     routes.slice(0, 30).forEach(r => {
       const routeLive = liveArrivals.filter(a => a.line === r);
-      const mode = routeLive.length ? routeLive[0].mode : 'bus';
+      const mode = routeLive.length ? routeLive[0].mode : _guessMode(r);
       const color = Stops.getModeColor(mode);
       const nextDue = routeLive.length ? routeLive[0].timeToStation : null;
       const nextText = nextDue !== null ? (nextDue <= 0 ? 'Due' : nextDue + ' min') : '';

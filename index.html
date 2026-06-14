@@ -24,6 +24,7 @@
         <span class="header-title"><span class="ic" data-ic="tube"></span> London Transit</span>
         <span id="status-indicator" class="status-indicator"></span>
       </div>
+      <span id="offline-badge" class="offline-badge" style="display:none">Offline</span>
       <div class="header-right">
         <button id="live-toggle" class="header-btn" title="Live location tracking"><span class="ic" data-ic="gps"></span></button>
         <button id="refresh-btn" class="header-btn" title="Refresh page"><span class="ic" data-ic="refresh"></span></button>
@@ -40,6 +41,7 @@
 
     <main id="main-content">
       <div id="tab-journey" class="tab-content active">
+        <div id="resume-prompt" class="resume-prompt" style="display:none"></div>
         <div id="search-box">
           <div class="search-row">
             <div class="input-wrap">
@@ -91,8 +93,8 @@
               <button id="stop-check-btn" class="btn-secondary" title="Search stop"><span class="ic" data-ic="search"></span></button>
             </div>
           </div>
-          <div id="results-panel">
-          </div>
+        </div>
+        <div id="results-panel">
         </div>
       </div>
 
@@ -157,6 +159,7 @@
   </div>
 
   <div id="trip-nav-bar" style="display:none">
+    <div id="offline-banner" class="offline-banner" style="display:none"><span class="ic" data-ic="wifi_off"></span> No internet connection — trip continues offline</div>
     <div id="trip-nav-header">
       <button id="trip-nav-toggle"><span class="ic" data-ic="chevron_down"></span></button>
       <button id="trip-reroute-btn" title="Recalculate route">↻</button>
@@ -188,6 +191,14 @@
       <span class="legend-item"><span class="legend-dot" style="background:#f86c00"></span>Overground</span>
       <span class="legend-item"><span class="legend-dot" style="background:#00a4a7"></span>River</span>
       <span class="legend-item"><span class="ic" data-ic="bike"></span>Santander</span>
+    </div>
+    <div id="layer-toggles" class="hidden">
+      <span class="layer-toggle-label">Layers:</span>
+      <button class="layer-btn" data-mode="tube" style="background:#0019a8">Tube</button>
+      <button class="layer-btn" data-mode="bus" style="background:#e32017">Bus</button>
+      <button class="layer-btn" data-mode="dlr" style="background:#00a94f">DLR</button>
+      <button class="layer-btn" data-mode="overground" style="background:#f86c00">Overground</button>
+      <button class="layer-btn" data-mode="elizabeth-line" style="background:#6950a0">Elizabeth</button>
     </div>
     <div id="map-resize-handle"></div>
   </div>

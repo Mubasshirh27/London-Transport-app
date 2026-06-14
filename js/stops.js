@@ -38,6 +38,7 @@ const Stops = (() => {
     } catch {}
     // Fallback to scheduled timetable when no live arrivals
     return getScheduledArrivals(stopId);
+  }
 
   async function getScheduledArrivals(stopId) {
     try {
@@ -92,10 +93,15 @@ const Stops = (() => {
           if (schedFrom && schedFrom > today) continue;
           if (schedTo && schedTo < today) continue;
           const name = (sched.name || '').toLowerCase();
-          const dow = now.getDay();
-          if (dow === 0 && !name.includes('sunday')) continue;
-          if (dow === 6 && !name.includes('saturday')) continue;
-          if (dow > 0 && dow < 6 && (name.includes('saturday') || name.includes('sunday')) && !name.includes('friday') && !name.includes('weekday') && !name.includes('monday')) continue;
+          const dayNames = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+          const todayStr = dayNames[now.getDay()];
+          const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+          const mentionedDays = dayNames.filter(d => name.includes(d));
+          if (mentionedDays.length > 0) {
+            const inRange = !isWeekend && (name.includes('monday to friday') || name.includes('monday - friday') || name.includes('mon-fri') || name.includes('monday-friday'));
+            const isMatch = mentionedDays.includes(todayStr) || (inRange && !isWeekend) || (name.includes('weekend') && isWeekend);
+            if (!isMatch) continue;
+          }
           for (const j of kj) {
             const depH = parseInt(j.hour, 10);
             const depM = parseInt(j.minute, 10);
@@ -160,7 +166,6 @@ const Stops = (() => {
       direction: a.direction,
       dirLabel
     };
-  }
   }
 
   function groupArrivals(arrivals) {

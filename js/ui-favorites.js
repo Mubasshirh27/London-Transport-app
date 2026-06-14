@@ -1,5 +1,6 @@
 (function() {
   const UI = window.UI = window.UI || {};
+  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
 
   function showFavoritesDropdown(target) {
     const existing = document.querySelector('.fav-dropdown');
@@ -19,12 +20,12 @@
       const saveLat = currentVal ? currentVal.lat : null;
       const saveLon = currentVal ? currentVal.lon : null;
       const isFav = currentVal ? Store.isFavorite(currentVal) : false;
-      html += '<div class="fav-dropdown-item save-fav" data-label="' + saveLabel + '" data-lat="' + (saveLat || '') + '" data-lon="' + (saveLon || '') + '"><span>' + (isFav ? '✅' : '➕') + '</span><span class="fav-dd-label">' + (isFav ? 'Remove from saved' : 'Save "' + saveLabel + '"') + '</span></div>';
+      html += '<div class="fav-dropdown-item save-fav" data-label="' + esc(saveLabel) + '" data-lat="' + esc(saveLat || '') + '" data-lon="' + esc(saveLon || '') + '"><span>' + (isFav ? '✅' : '➕') + '</span><span class="fav-dd-label">' + (isFav ? 'Remove from saved' : 'Save "' + esc(saveLabel) + '"') + '</span></div>';
     }
 
     if (favs.length) {
       html += favs.map(f =>
-        '<div class="fav-dropdown-item" data-target="' + target + '" data-label="' + f.label + '" data-lat="' + f.lat + '" data-lon="' + f.lon + '"><span>⭐</span><span class="fav-dd-label">' + f.label + '</span><button class="fav-dd-remove" data-id="' + f.id + '">✕</button></div>'
+        '<div class="fav-dropdown-item" data-target="' + target + '" data-label="' + esc(f.label) + '" data-lat="' + esc(f.lat) + '" data-lon="' + esc(f.lon) + '"><span>⭐</span><span class="fav-dd-label">' + esc(f.label) + '</span><button class="fav-dd-remove" data-id="' + esc(f.id) + '">✕</button></div>'
       ).join('');
     } else {
       html += '<div class="fav-dropdown-empty">No saved places</div>';
