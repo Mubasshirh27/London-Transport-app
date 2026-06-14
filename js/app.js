@@ -1477,7 +1477,8 @@
             const layers = window.__transitLayerRoutes[mode];
             if (layers) {
               (layers.leaflet || []).forEach(l => { try { l.remove(); } catch {} });
-              (layers.mlIds || []).forEach(id => { try { if (typeof map3dInstance !== 'undefined' && map3dInstance) { map3dInstance.removeLayer(id); map3dInstance.removeSource(id); } } catch {} });
+              (layers.mlIds || []).forEach(id => { try { if (map3dInstance) map3dInstance.removeLayer(id); } catch {} });
+              (layers.mlIds || []).forEach(id => { try { if (map3dInstance && !id.endsWith('_glow')) map3dInstance.removeSource(id.replace(/_glow$/, '')); } catch {} });
               delete window.__transitLayerRoutes[mode];
             }
             return;
@@ -1862,7 +1863,7 @@ function start3DMap() {
               if (status) status.innerHTML += ' <span style="color:#888;font-size:10px">Loading buildings…</span>';
               const feats = await fetchBuildings(map3dInstance);
               if (status && origHTML) status.innerHTML = origHTML;
-              if (feats.length > 0 && !map3dInstance.getLayer('bld-extrude')) {
+              if (feats.length > 0 && map3dInstance && !map3dInstance.getLayer('bld-extrude')) {
                 map3dInstance.addSource('bld', {
                   type: 'geojson',
                   data: { type: 'FeatureCollection', features: feats }
@@ -1875,9 +1876,7 @@ function start3DMap() {
                     'fill-extrusion-color': ['interpolate', ['linear'], ['get', 'levels'], 1, '#2e3340', 3, '#3e4558', 6, '#50587a', 10, '#6070a0'],
                     'fill-extrusion-height': ['get', 'height'],
                     'fill-extrusion-base': 0,
-                    'fill-extrusion-opacity': 0.75,
-                    'fill-extrusion-ambient-occlusion-intensity': 0.4,
-                    'fill-extrusion-ambient-occlusion-radius': 3
+                    'fill-extrusion-opacity': 0.75
                   }
                 });
               }

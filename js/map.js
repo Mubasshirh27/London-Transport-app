@@ -19,7 +19,12 @@ const MapView = (() => {
 
   function clear3dAll() {
     mlMarkers.forEach(m => { try { m.remove(); } catch {} }); mlMarkers = [];
-    if (mlMap) mlRouteLayers.forEach(id => { try { mlMap.removeLayer(id); mlMap.removeSource(id); } catch {} });
+    if (mlMap) {
+      const toRemove = [...mlRouteLayers];
+      toRemove.forEach(id => { try { mlMap.removeLayer(id); } catch {} });
+      const seen = new Set();
+      toRemove.forEach(id => { try { if (!id.endsWith('_glow') && !seen.has(id)) { mlMap.removeSource(id); seen.add(id); } } catch {} });
+    }
     mlRouteLayers = [];
     mlStopMarkers.forEach(m => { try { m.remove(); } catch {} }); mlStopMarkers = [];
     mlBikeMarkers.forEach(m => { try { m.remove(); } catch {} }); mlBikeMarkers = [];
@@ -119,7 +124,10 @@ const MapView = (() => {
 
   function clearRoutes() {
     routes.forEach(r => { try { map.removeLayer(r); } catch {} }); routes = [];
-    mlRouteLayers.forEach(id => { try { if (mlMap) { mlMap.removeLayer(id); mlMap.removeSource(id); } } catch {} });
+    const toRemove = [...mlRouteLayers];
+    toRemove.forEach(id => { try { if (mlMap) mlMap.removeLayer(id); } catch {} });
+    const seen = new Set();
+    toRemove.forEach(id => { try { if (mlMap && !id.endsWith('_glow') && !seen.has(id)) { mlMap.removeSource(id); seen.add(id); } } catch {} });
     mlRouteLayers = [];
     routeData = [];
     if (window.__ml_lineLayer) window.__ml_lineLayer.lines = [];

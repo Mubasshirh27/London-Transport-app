@@ -78,6 +78,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
+  if (url.protocol === 'chrome-extension:') return;
   if (url.origin === self.location.origin && STATIC.some(p => url.pathname === p)) {
     e.respondWith(
       caches.match(e.request).then(cached => {
