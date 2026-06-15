@@ -1459,15 +1459,9 @@
     window.__transitLayerRoutes = {};
 
     function setupTransitLayers() {
-      const legend = document.getElementById('map-legend');
       const toggles = document.getElementById('layer-toggles');
       if (!toggles) return;
-
-      const observer = new MutationObserver(() => {
-        toggles.classList.toggle('hidden', legend && legend.classList.contains('hidden'));
-      });
-      if (legend) observer.observe(legend, { attributes: true, attributeFilter: ['class'] });
-      toggles.classList.toggle('hidden', legend && legend.classList.contains('hidden'));
+      toggles.classList.remove('hidden');
 
       document.querySelectorAll('.layer-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
