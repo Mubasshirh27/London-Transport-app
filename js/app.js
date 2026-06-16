@@ -9,6 +9,14 @@
   let activeZoom = null;
   let bikeLocation = null;
   let bikePinTarget = null;
+  let currentStationIndex = -1;
+
+  const GREATER_LONDON = {
+    north: 51.7,
+    south: 51.28,
+    east: 0.34,
+    west: -0.51
+  };
 
   function escapeHtml(str) { const d = document.createElement('div'); d.appendChild(document.createTextNode(str)); return d.innerHTML; }
 
@@ -403,6 +411,7 @@
       _posHistory = [];
       _currentSpeed = 1.4;
       _tripDelaySecs = 0;
+      currentStationIndex = 0;
       if (_autoEndTimer !== null) { clearTimeout(_autoEndTimer); _autoEndTimer = null; }
 
       // Switch to journey tab
@@ -429,13 +438,13 @@
       if (teBtn) teBtn.style.display = 'inline-block';
 
       const navBar = document.getElementById('trip-nav-bar');
-      const navContent = document.getElementById('trip-nav-content');
+      const timeline = document.getElementById('trip-timeline');
       recenterBtn = document.getElementById('trip-recenter-btn');
       const tripEta = document.getElementById('trip-eta');
 
       navBar.style.display = 'block';
       navBar.classList.remove('collapsed');
-      navContent.innerHTML = '<div style="display:flex;align-items:center;gap:6px;padding:4px 0"><div class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;flex-shrink:0"></div><span>Locating you...</span></div>';
+      timeline.innerHTML = '<div style="display:flex;align-items:center;gap:6px;padding:8px 10px"><div class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;flex-shrink:0"></div><span>Locating you...</span></div>';
       recenterBtn.style.display = 'none';
       if (tripEta) tripEta.textContent = '';
       // Show locating message in map title bar too
@@ -606,6 +615,7 @@
       _posHistory = [];
       _currentSpeed = 1.4;
       _tripDelaySecs = 0;
+      currentStationIndex = -1;
       if (_autoEndTimer !== null) { clearTimeout(_autoEndTimer); _autoEndTimer = null; }
       tripActiveKey = null;
       tripLegIndex = -1;
@@ -881,6 +891,17 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
+    function getLegStartStationIndex(legs, legIdx) {
+      let idx = 0;
+      for (let i = 0; i < legIdx; i++) {
+        const leg = legs[i];
+        if (leg.from && leg.from.lat != null) idx++;
+        if (leg.stops) idx += leg.stops.filter(s => s.lat != null).length;
+        if (leg.to && leg.to.lat != null) idx++;
+      }
+      return idx;
+    }
+
     function distanceDeg(lat1, lon1, lat2, lon2) {
       return Math.sqrt((lat1 - lat2) ** 2 + (lon1 - lon2) ** 2);
     }
@@ -921,37 +942,273 @@
       return len;
     }
 
+    function renderTripTimeline(journey, legs, tripLegIdx, lat, lon, distToNextStation, etaStr) {
+      const container = document.getElementById('trip-timeline');
+      if (!container) return;
+
+      const currentLeg = legs[tripLegIdx];
+      if (!currentLeg) return;
+
+      const now = Date.now();
+      let html = '';
+      let globalStationIdx = 0;
+
+      // Calculate per-leg current index from global currentStationIndex
+      const legStartGlobalIdx = getLegStartStationIndex(legs, tripLegIdx);
+      const perLegCurrentIdx = currentStationIndex - legStartGlobalIdx;
+
+      // --- Current leg stations header ---
+      const modeIcon = Router.getModeIcon(currentLeg.mode);
+      const routeName = (currentLeg.modeName || currentLeg.mode || '') + (currentLeg.routeName ? ' ' + currentLeg.routeName : '');
+      const platform = currentLeg.platformName || '';
+      const direction = currentLeg.direction || '';
+      const depTime = currentLeg.departureTime ? new Date(currentLeg.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      const arrTime = currentLeg.arrivalTime ? new Date(currentLeg.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+      html += '<div class="tl-leg-header">';
+      html += '<span class="tl-leg-mode-icon">' + modeIcon + '</span>';
+      html += '<div class="tl-leg-info">';
+      html += '<div class="tl-leg-line-name">' + escapeHtml(routeName || 'Travel') + '</div>';
+      if (direction) html += '<div class="tl-leg-direction">→ ' + escapeHtml(direction) + '</div>';
+      html += '</div>';
+      if (platform) html += '<div class="tl-leg-platform">' + escapeHtml(platform) + '</div>';
+      html += '</div>';
+
+      // --- Origin station (departed) ---
+      if (currentLeg.from) {
+        const isCompleted = perLegCurrentIdx > globalStationIdx;
+        const isCurrent = perLegCurrentIdx === globalStationIdx;
+        html += '<div class="tl-station ' + (isCompleted ? 'completed' : (isCurrent ? 'current' : 'upcoming')) + '">';
+        html += '<div class="tl-dot"></div>';
+        html += '<div class="tl-station-info">';
+        html += '<span class="tl-station-name">' + escapeHtml(currentLeg.from.name || '') + '</span>';
+        html += '<span class="tl-station-check">✓</span>';
+        html += '<span class="tl-station-time">' + (depTime || '') + '</span>';
+        html += '</div>';
+        html += '</div>';
+        globalStationIdx++;
+      }
+
+      // --- Intermediate stops ---
+      if (currentLeg.stops && currentLeg.stops.length) {
+        for (const stop of currentLeg.stops) {
+          if (!stop.lat || !stop.lon) continue;
+          const isCompleted = perLegCurrentIdx > globalStationIdx;
+          const isCurrent = perLegCurrentIdx === globalStationIdx;
+          const stopState = isCompleted ? 'completed' : (isCurrent ? 'current' : 'upcoming');
+
+          const stopArr = stop.arrivalTime ? new Date(stop.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+          html += '<div class="tl-station ' + stopState + '" data-station-idx="' + globalStationIdx + '">';
+          html += '<div class="tl-dot"></div>';
+          html += '<div class="tl-station-info">';
+          html += '<span class="tl-station-name">' + escapeHtml(stop.name || '') + '</span>';
+          html += '<span class="tl-station-check">✓</span>';
+          if (isCurrent && distToNextStation !== null) {
+            html += '<span class="tl-you-are-here">You are here</span>';
+            html += '<span class="tl-station-dist">' + Math.round(distToNextStation) + 'm away</span>';
+          }
+          html += '<span class="tl-station-time">' + (stopArr || '') + '</span>';
+          html += '</div>';
+          html += '</div>';
+          globalStationIdx++;
+        }
+      }
+
+      // --- Destination station ---
+      if (currentLeg.to) {
+        const isCompleted = perLegCurrentIdx > globalStationIdx;
+        const isCurrent = perLegCurrentIdx === globalStationIdx;
+        const destState = isCompleted ? 'completed' : (isCurrent ? 'current' : 'upcoming');
+
+        html += '<div class="tl-station ' + destState + '" data-station-idx="' + globalStationIdx + '">';
+        html += '<div class="tl-dot"></div>';
+        html += '<div class="tl-station-info">';
+        html += '<span class="tl-station-name">' + escapeHtml(currentLeg.to.name || '') + '</span>';
+        html += '<span class="tl-station-check">✓</span>';
+        if (isCurrent && distToNextStation !== null) {
+          html += '<span class="tl-you-are-here">You are here</span>';
+          html += '<span class="tl-station-dist">' + Math.round(distToNextStation) + 'm away</span>';
+        }
+        html += '<span class="tl-station-time">' + (arrTime || '') + '</span>';
+        html += '</div>';
+        html += '</div>';
+        globalStationIdx++;
+      }
+
+      // --- Walking segment to next leg ---
+      const nextLeg = legs[tripLegIdx + 1];
+      if (nextLeg) {
+        const walkDist = nextLeg.path && nextLeg.path.length >= 2 ? Math.round(getPathLength(nextLeg.path)) : 0;
+        const walkDur = nextLeg.duration || 0;
+        const nextIcon = Router.getModeIcon(nextLeg.mode);
+
+        html += '<div class="tl-walking">';
+        html += '<span class="tl-walking-icon">🚶</span>';
+        html += '<span class="tl-walking-text">Walk ' + walkDur + ' min to ' + escapeHtml(nextLeg.from ? nextLeg.from.name : 'next station') + '</span>';
+        if (walkDist > 0) html += '<span class="tl-walking-dist">' + walkDist + 'm</span>';
+        html += '</div>';
+
+        // Next leg header
+        const nextRouteName = (nextLeg.modeName || nextLeg.mode || '') + (nextLeg.routeName ? ' ' + nextLeg.routeName : '');
+        const nextPlatform = nextLeg.platformName || '';
+        const nextDir = nextLeg.direction || '';
+        const nextDepTime = nextLeg.departureTime ? new Date(nextLeg.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+        const nextArrTime = nextLeg.arrivalTime ? new Date(nextLeg.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+        html += '<div class="tl-leg-header">';
+        html += '<span class="tl-leg-mode-icon">' + nextIcon + '</span>';
+        html += '<div class="tl-leg-info">';
+        html += '<div class="tl-leg-line-name">' + escapeHtml(nextRouteName || 'Travel') + '</div>';
+        if (nextDir) html += '<div class="tl-leg-direction">→ ' + escapeHtml(nextDir) + '</div>';
+        html += '</div>';
+        if (nextPlatform) html += '<div class="tl-leg-platform">' + escapeHtml(nextPlatform) + '</div>';
+        html += '</div>';
+
+        // Next leg origin (where user will board)
+        if (nextLeg.from) {
+          html += '<div class="tl-station upcoming">';
+          html += '<div class="tl-dot"></div>';
+          html += '<div class="tl-station-info">';
+          html += '<span class="tl-station-name">' + escapeHtml(nextLeg.from.name || '') + '</span>';
+          html += '<span class="tl-station-check">✓</span>';
+          html += '<span class="tl-station-time">' + (nextDepTime || '') + '</span>';
+          html += '</div>';
+          html += '</div>';
+        }
+
+        // Next leg stops preview (show 3 max)
+        if (nextLeg.stops && nextLeg.stops.length) {
+          const previewStops = nextLeg.stops.slice(0, 3);
+          for (const stop of previewStops) {
+            if (!stop.lat || !stop.lon) continue;
+            const stopArr = stop.arrivalTime ? new Date(stop.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            html += '<div class="tl-station upcoming">';
+            html += '<div class="tl-dot"></div>';
+            html += '<div class="tl-station-info">';
+            html += '<span class="tl-station-name">' + escapeHtml(stop.name || '') + '</span>';
+            html += '<span class="tl-station-check">✓</span>';
+            html += '<span class="tl-station-time">' + (stopArr || '') + '</span>';
+            html += '</div>';
+            html += '</div>';
+          }
+          if (nextLeg.stops.length > 3) {
+            html += '<div class="tl-station upcoming" style="opacity:.4;font-size:9px;padding:2px 0 2px 20px">+' + (nextLeg.stops.length - 3) + ' more stops</div>';
+          }
+        }
+
+        // Next leg destination
+        if (nextLeg.to) {
+          html += '<div class="tl-station upcoming">';
+          html += '<div class="tl-dot"></div>';
+          html += '<div class="tl-station-info">';
+          html += '<span class="tl-station-name">' + escapeHtml(nextLeg.to.name || '') + '</span>';
+          html += '<span class="tl-station-check">✓</span>';
+          html += '<span class="tl-station-time">' + (nextArrTime || '') + '</span>';
+          html += '</div>';
+          html += '</div>';
+        }
+      }
+
+      // --- Destination footer ---
+      const destLeg = legs[legs.length - 1];
+      const destName = destLeg && destLeg.to ? (destLeg.to.name || 'Destination') : 'Destination';
+
+      html += '<div class="tl-footer">';
+      html += '<div class="tl-footer-label">Final Destination</div>';
+      html += '<div class="tl-footer-leg">';
+      html += '<span>📍</span>';
+      html += '<span class="tl-footer-name">' + escapeHtml(destName) + '</span>';
+      if (etaStr) html += '<span class="tl-footer-time">ETA ' + escapeHtml(etaStr) + '</span>';
+      html += '</div>';
+      html += '</div>';
+
+      container.innerHTML = html;
+
+      // Auto-scroll to current station
+      const currentEl = container.querySelector('.tl-station.current');
+      if (currentEl) {
+        setTimeout(() => {
+          currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      }
+    }
+
     function renderTripRoutes() {
       const journey = activeJourneys[tripActiveKey];
       if (!journey) return;
       MapView.clearRoutes();
       MapView.clearMarkers();
-      const modeColors = { walking: '#666', bus: '#e32017', tube: '#0019a8', dlr: '#00a94f', overground: '#f86c00', 'elizabeth-line': '#6950a0', 'national-rail': '#003688', tram: '#66cc00' };
-      const firstLeg = journey.legs[0];
-      const lastLeg = journey.legs[journey.legs.length - 1];
-      if (firstLeg && firstLeg.from) MapView.addMarker(firstLeg.from.lat, firstLeg.from.lon, 'From: ' + (firstLeg.from.name || 'Start'), '#0019a8');
-      if (lastLeg && lastLeg.to) MapView.addMarker(lastLeg.to.lat, lastLeg.to.lon, 'To: ' + (lastLeg.to.name || 'Destination'), '#e32017');
 
-      journey.legs.forEach((leg, i) => {
-        const path = leg.path || [];
-        if (path.length >= 2) {
-          let color, w;
-          if (i < tripLegIndex) { color = '#00cc66'; w = 3; }
-          else if (i === tripLegIndex) {
-            color = '#33ff99'; w = 6;
-            // Show intermediate stop markers for current leg
-            if (leg.stops && leg.stops.length) {
-              leg.stops.forEach(s => {
-                if (s.lat != null && s.lon != null) {
-                  MapView.addMarker(s.lat, s.lon, s.name || 'Stop', 'rgba(255,255,255,0.3)');
-                }
-              });
-            }
-          }
-          else { color = modeColors[leg.mode] || '#555'; w = 4; }
-          MapView.addRoute(path, color, '', w);
+      const modeColors = { walking: '#888', bus: '#e32017', tube: '#0019a8', dlr: '#00a94f', overground: '#f86c00', 'elizabeth-line': '#6950a8', 'national-rail': '#003688', tram: '#66cc00' };
+
+      // Collect ALL stations across all legs for markers
+      const allStations = [];
+      let stationIdx = 0;
+      const legStartStationIdx = [];
+
+      journey.legs.forEach((leg, legIdx) => {
+        legStartStationIdx[legIdx] = stationIdx;
+        if (leg.from && leg.from.lat != null) {
+          allStations.push({ ...leg.from, stationIdx: stationIdx++, legIndex: legIdx, type: 'departure' });
+        }
+        if (leg.stops && leg.stops.length) {
+          leg.stops.forEach(s => {
+            if (s.lat != null) allStations.push({ ...s, stationIdx: stationIdx++, legIndex: legIdx, type: 'stop' });
+          });
+        }
+        if (leg.to && leg.to.lat != null) {
+          allStations.push({ ...leg.to, stationIdx: stationIdx++, legIndex: legIdx, type: 'arrival' });
         }
       });
+
+      // Add markers for ALL stations with appropriate styles
+      allStations.forEach((station, idx) => {
+        let color, size, label;
+        const isCompleted = idx < currentStationIndex;
+        const isCurrent = idx === currentStationIndex;
+        const isUpcoming = idx > currentStationIndex;
+
+        if (tripArrived || isCompleted) {
+          color = '#00cc66'; size = 10; label = station.name || 'Station';
+        } else if (isCurrent) {
+          color = '#4285f4'; size = 14; label = station.name || 'Station';
+        } else {
+          color = '#aaaaaa'; size = 8; label = station.name || 'Station';
+        }
+
+        MapView.addMarker(station.lat, station.lon, label, color);
+      });
+
+      // Draw route lines - completed legs green, current bright green with wider stroke, future legs colored
+      journey.legs.forEach((leg, i) => {
+        const path = leg.path || [];
+        if (path.length < 2) return;
+
+        if (i < tripLegIndex) {
+          // Completed leg - green
+          MapView.addRoute(path, '#00cc66', '', 3);
+        } else if (i === tripLegIndex) {
+          // Current leg - bright green, wider
+          MapView.addRoute(path, '#33ff99', '', 6);
+        } else {
+          // Future leg - mode color
+          MapView.addRoute(path, modeColors[leg.mode] || '#666', '', 4);
+        }
+      });
+
+      // Auto-zoom to show full journey on first render
+      const hasStations = allStations.length > 0;
+      if (hasStations) {
+        const lats = allStations.map(s => s.lat);
+        const lons = allStations.map(s => s.lon);
+        const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+        const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+        const midLat = (minLat + maxLat) / 2;
+        const midLon = (minLon + maxLon) / 2;
+        // Zoom out enough to see the full journey
+        MapView.flyTo(midLat, midLon, 12);
+      }
     }
 
     function updateTripProgress(lat, lon, gpsPos) {
@@ -986,6 +1243,8 @@
 
       // --- Re-render map routes when leg index changes ---
       if (tripLegIndex !== lastRenderedLegIndex) {
+        // When leg changes, set currentStationIndex to the new leg's starting station index
+        currentStationIndex = getLegStartStationIndex(legs, tripLegIndex);
         window._notifiedAlight = false;
         renderTripRoutes();
         lastRenderedLegIndex = tripLegIndex;
@@ -1137,6 +1396,50 @@
         }
       }
 
+      // --- Find nearest station for timeline tracking ---
+      let distToNextStation = null;
+      let nearestStationIdx = 0;
+      let nearestStationDist = Infinity;
+      const cur = legs[tripLegIndex];
+
+      if (cur && cur.mode !== 'walking') {
+        const allStations = [];
+        if (cur.from) allStations.push({ name: cur.from.name, lat: cur.from.lat, lon: cur.from.lon, idx: 0 });
+        if (cur.stops) {
+          cur.stops.forEach((s, i) => {
+            if (s.lat != null && s.lon != null) allStations.push({ name: s.name, lat: s.lat, lon: s.lon, idx: i + 1 });
+          });
+        }
+        if (cur.to) allStations.push({ name: cur.to.name, lat: cur.to.lat, lon: cur.to.lon, idx: allStations.length });
+
+        let prevDist = Infinity;
+        for (const st of allStations) {
+          const d = haversine(lat, lon, st.lat, st.lon);
+          if (d < nearestStationDist) {
+            nearestStationDist = d;
+            nearestStationIdx = st.idx;
+          }
+          if (d < 80 && d < prevDist) {
+            nearestStationIdx = st.idx;
+            distToNextStation = d;
+          }
+          prevDist = d;
+        }
+
+        if (currentStationIndex !== nearestStationIdx) {
+          currentStationIndex = nearestStationIdx;
+        }
+
+        const nextStationItem = allStations.find(s => s.idx === nearestStationIdx + 1);
+        if (nextStationItem) {
+          distToNextStation = haversine(lat, lon, nextStationItem.lat, nextStationItem.lon);
+        } else if (cur.to && nearestStationIdx === allStations.length - 1) {
+          distToNextStation = haversine(lat, lon, cur.to.lat, cur.to.lon);
+        }
+      } else if (cur && cur.mode === 'walking') {
+        currentStationIndex = 0;
+      }
+
       // --- Update UI ---
       const progressText = document.getElementById('trip-progress-text');
       const progressFill = document.getElementById('trip-progress-fill');
@@ -1145,135 +1448,8 @@
       if (progressFill) progressFill.style.width = (tripArrived ? '100' : totalProgress) + '%';
       if (tripEta) tripEta.textContent = tripArrived ? '✅ Arrived' : 'ETA ' + etaStr;
 
-      // --- Step Guidance ---
-      const destLeg = legs[legs.length - 1];
-      const destName = destLeg && destLeg.to ? (destLeg.to.name || 'Destination') : 'Destination';
-
-      let html = '';
-      if (tripArrived) {
-        html += '<div class="trip-step current" style="text-align:center"><div class="trip-step-header" style="justify-content:center;font-size:14px">✅ Arrived at ' + destName + '</div><div class="trip-step-loc" style="text-align:center">Trip complete</div></div>';
-      } else {
-        const nextLeg = legs[tripLegIndex + 1];
-        const cur = legs[tripLegIndex];
-
-        if (cur) {
-          const modeIcon = Router.getModeIcon(cur.mode);
-          const modeName = cur.modeName || cur.mode || '';
-          const routeName = cur.routeName || '';
-          const dep = cur.departureTime ? new Date(cur.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-          const arr = cur.arrivalTime ? new Date(cur.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-          const fromName = cur.from ? (cur.from.name || '') : '';
-          const toName = cur.to ? (cur.to.name || '') : '';
-          const detail = cur.detail || cur.instruction || '';
-          const plat = cur.platformName || '';
-          const dir = cur.direction || '';
-          const label = (modeName + (routeName ? ' ' + routeName : '')).trim() || 'Travel';
-
-          // Stop countdown for transit
-          let stopCountdownHtml = '';
-          if (cur.mode !== 'walking' && cur.stops && cur.stops.length) {
-            const stopsArr = cur.stops;
-            let minStopDist = Infinity, minStopIdx = -1;
-            for (let si = 0; si < stopsArr.length; si++) {
-              const s = stopsArr[si];
-              if (s.lat != null && s.lon != null) {
-                const d = haversine(lat, lon, s.lat, s.lon);
-                if (d < minStopDist) { minStopDist = d; minStopIdx = si; }
-              }
-            }
-            if (minStopIdx >= 0) {
-              const remaining = stopsArr.length - 1 - minStopIdx;
-              if (remaining > 0 && remaining < stopsArr.length) {
-                const nextStop = stopsArr[minStopIdx + 1];
-                stopCountdownHtml = '<div class="trip-stops-remaining">' + remaining + ' stop' + (remaining !== 1 ? 's' : '') + (nextStop && nextStop.name ? ' to ' + nextStop.name : '') + '</div>';
-              }
-            }
-          }
-
-          // Walking distance
-          let walkDistHtml = '';
-          if (cur.mode === 'walking' && cur.path && cur.path.length >= 2) {
-            const remainingD = (1 - currentLegProgress) * getPathLength(cur.path);
-            if (remainingD > 10) walkDistHtml = '<div class="trip-countdown">' + Math.round(remainingD) + 'm</div>';
-          }
-
-          // Walking turn-by-turn guidance
-          let walkStepsHtml = '';
-          if (cur.mode === 'walking' && cur.walkSteps && cur.walkSteps.length && gpsPos) {
-            const wsLat = gpsPos.coords.latitude, wsLon = gpsPos.coords.longitude;
-            let bestIdx = 0, bestDist = Infinity;
-            for (let i = 0; i < cur.walkSteps.length; i++) {
-              const step = cur.walkSteps[i];
-              if (step.coords && step.coords.length) {
-                for (const c of step.coords) {
-                  const d = Math.sqrt((wsLat - c[0]) ** 2 + (wsLon - c[1]) ** 2);
-                  if (d < bestDist) { bestDist = d; bestIdx = i; }
-                }
-              }
-            }
-            const ws = cur.walkSteps[bestIdx];
-            const wn = cur.walkSteps[bestIdx + 1];
-            if (ws) {
-              const dirArrow = ws.modifier === 'turn-left' ? '⬅ ' : ws.modifier === 'turn-right' ? '➡ ' : ws.modifier === 'uturn' ? '↩ ' : '⬆ ';
-              walkStepsHtml += '<div class="walk-step-instr">' + dirArrow + escapeHtml(ws.instruction || 'Walk') + ' <span class="walk-step-dist">' + Math.round(ws.distance) + 'm</span></div>';
-              if (wn) walkStepsHtml += '<div class="walk-step-next">Next: ' + escapeHtml(wn.instruction || '') + ' (' + Math.round(wn.distance) + 'm)</div>';
-            }
-          }
-
-          const legProgressPct = Math.round(currentLegProgress * 100);
-
-          html += '<div class="trip-step current">';
-          html += '<div class="trip-step-header"><span class="mode-icon">' + modeIcon + '</span><span class="route-name">' + label + '</span><span class="step-dur">' + (cur.duration || 0) + ' min</span></div>';
-          if (fromName && toName && cur.mode !== 'walking') html += '<div class="trip-step-loc">' + fromName + ' → ' + toName + '</div>';
-          if (detail && cur.mode === 'walking') html += '<div class="trip-step-loc">' + detail + '</div>';
-
-          let metaParts = [];
-          if (plat) metaParts.push('<span class="plat-badge">' + plat + '</span>');
-          if (dir) metaParts.push('<span class="trip-step-dir">→ ' + dir + '</span>');
-          if (dep || arr) metaParts.push('<span class="trip-time">' + (dep || '') + (dep && arr ? ' → ' : '') + (arr || '') + '</span>');
-          if (metaParts.length) html += '<div class="trip-step-meta">' + metaParts.join('') + '</div>';
-
-          if (stopCountdownHtml) html += stopCountdownHtml;
-          if (walkDistHtml) html += walkDistHtml;
-          if (walkStepsHtml) html += walkStepsHtml;
-
-          if (legProgressPct > 0 && legProgressPct < 100) html += '<div class="trip-step-progress"><div class="trip-step-progress-fill" style="width:' + legProgressPct + '%"></div></div>';
-          html += '</div>';
-        }
-
-        // Next leg connection
-        if (nextLeg && nextLeg.mode !== 'walking') {
-          const nextIcon = Router.getModeIcon(nextLeg.mode);
-          const nextName = (nextLeg.modeName || nextLeg.mode || '') + (nextLeg.routeName ? ' ' + nextLeg.routeName : '');
-          const nextFrom = nextLeg.from ? nextLeg.from.name : '';
-          const nextPlat = nextLeg.platformName || '';
-          const nextDir = nextLeg.direction || '';
-          const nextDepTime = nextLeg.departureTime ? new Date(nextLeg.departureTime) : null;
-          const nextCountdownMs = nextDepTime ? Math.max(0, nextDepTime.getTime() - Date.now()) : 0;
-          const nextCountdownMin = Math.floor(nextCountdownMs / 60000);
-          const nextCountdownSec = Math.floor((nextCountdownMs % 60000) / 1000);
-          const nextTimeStr = nextDepTime ? nextDepTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-
-          html += '<div class="trip-step next">';
-          html += '<div class="trip-step-header"><span class="mode-icon">' + nextIcon + '</span><span class="route-name">Next: ' + nextName + '</span><span class="step-dur">' + (nextLeg.duration || 0) + ' min</span></div>';
-          if (nextFrom) html += '<div class="trip-step-loc">from ' + nextFrom + '</div>';
-          let nextMeta = [];
-          if (nextPlat) nextMeta.push('<span class="plat-badge">' + nextPlat + '</span>');
-          if (nextDir) nextMeta.push('<span class="trip-step-dir">→ ' + nextDir + '</span>');
-          if (nextTimeStr) nextMeta.push('<span class="trip-time">' + nextTimeStr + '</span>');
-          if (nextMeta.length) html += '<div class="trip-step-meta">' + nextMeta.join('') + '</div>';
-          if (nextCountdownMs > 0 && nextCountdownMs < 600000) {
-            html += '<div class="next-countdown">Departs in ' + (nextCountdownMin > 0 ? nextCountdownMin + 'm ' : '') + nextCountdownSec + 's</div>';
-          }
-          html += '</div>';
-        } else if (nextLeg && nextLeg.mode === 'walking') {
-          const walkDist = nextLeg.path && nextLeg.path.length >= 2 ? Math.round(getPathLength(nextLeg.path)) : 0;
-          html += '<div class="trip-step next"><div class="trip-step-header"><span class="mode-icon">🚶</span><span class="route-name">Walk ' + (nextLeg.duration || 0) + ' min' + (walkDist > 0 ? ' · ' + walkDist + 'm' : '') + '</span></div></div>';
-        }
-
-        html += '<div class="trip-step-dest">→ ' + destName + '</div>';
-      }
-      document.getElementById('trip-nav-content').innerHTML = html;
+      // --- Google Maps-Style Timeline ---
+      renderTripTimeline(journey, legs, tripLegIndex, lat, lon, distToNextStation, etaStr);
 
       // --- Highlight steps in journey card ---
       document.querySelectorAll('.journey-card .step').forEach((el, i) => {
@@ -1299,7 +1475,7 @@
 
     // --- Reroute ---
     function showRerouteNotification(msg) {
-      const nc = document.getElementById('trip-nav-content');
+      const nc = document.getElementById('trip-timeline');
       if (!nc) return;
       const note = document.createElement('div');
       note.className = 'reroute-notification';
@@ -1796,32 +1972,45 @@ function start3DMap() {
           ]
         };
 
-        async function fetchBuildings(m) {
-          const zoom = m.getZoom();
-          if (zoom < 13) return [];
-          const b = m.getBounds();
-          const pad = 0.002;
-          const bbox = `${b.getSouth()-pad},${b.getWest()-pad},${b.getNorth()+pad},${b.getEast()+pad}`;
-          const query = `[out:json][timeout:10];way["building"](${bbox});out geom;`;
-          try {
-            const r = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
-            if (!r.ok) return [];
-            const d = await r.json();
-            if (!d.elements) return [];
-            const feats = [];
-            d.elements.forEach(el => {
-              if (!el.geometry || el.geometry.length < 3) return;
-              const coords = el.geometry.map(g => [g.lon, g.lat]);
-              const lvls = parseFloat(el.tags?.['building:levels']) || 0;
-              const height = parseFloat(el.tags?.height) || lvls * 3 || 5;
-              feats.push({
-                type: 'Feature',
-                geometry: { type: 'Polygon', coordinates: [coords] },
-                properties: { height: Math.min(height, 80), levels: lvls || 1 }
-              });
-            });
-            return feats;
-          } catch { return []; }
+        async function fetchBuildingsChunked() {
+          const GRID = 4;
+          const latStep = (GREATER_LONDON.north - GREATER_LONDON.south) / GRID;
+          const lonStep = (GREATER_LONDON.east - GREATER_LONDON.west) / GRID;
+
+          const chunks = [];
+          for (let row = 0; row < GRID; row++) {
+            for (let col = 0; col < GRID; col++) {
+              const s = GREATER_LONDON.south + row * latStep;
+              const n = s + latStep;
+              const w = GREATER_LONDON.west + col * lonStep;
+              const e = w + lonStep;
+              const bbox = `${s},${w},${n},${e}`;
+              const query = `[out:json][timeout:25][maxsize:1073741824];way["building"](${bbox});out geom;`;
+              chunks.push(
+                fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`)
+                  .then(r => r.json())
+                  .then(d => d.elements || [])
+                  .catch(() => [])
+              );
+            }
+          }
+
+          const results = await Promise.all(chunks);
+          const allBuildings = results.flat();
+
+          return allBuildings
+            .filter(el => el.geometry && el.geometry.length >= 3)
+            .map(el => ({
+              type: 'Feature',
+              geometry: {
+                type: 'Polygon',
+                coordinates: [el.geometry.map(g => [g.lon, g.lat])]
+              },
+              properties: {
+                height: Math.min(parseFloat(el.tags?.height) || parseFloat(el.tags?.['building:levels']) * 3 || 5, 80),
+                levels: parseFloat(el.tags?.['building:levels']) || 1
+              }
+            }));
         }
 
         try {
@@ -1855,7 +2044,7 @@ function start3DMap() {
               const status = document.getElementById('map-legend');
               const origHTML = status ? status.innerHTML : '';
               if (status) status.innerHTML += ' <span style="color:#888;font-size:10px">Loading buildings…</span>';
-              const feats = await fetchBuildings(map3dInstance);
+              const feats = await fetchBuildingsChunked();
               if (status && origHTML) status.innerHTML = origHTML;
               if (feats.length > 0 && map3dInstance && !map3dInstance.getLayer('bld-extrude')) {
                 map3dInstance.addSource('bld', {
