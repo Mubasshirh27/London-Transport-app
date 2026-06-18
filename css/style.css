@@ -41,7 +41,7 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
   --safe-area-top: env(safe-area-inset-top);
   --safe-area-bottom: env(safe-area-inset-bottom);
-  overflow: hidden; height: 100dvh; min-height: -webkit-fill-available;
+  height: 100dvh; min-height: -webkit-fill-available;
   -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
   background: #12343b url('../img/people-walking-across-a-busy-city-street-with-blurred-background-photo.jpg') center/cover no-repeat scroll;
   color: var(--text);
@@ -50,8 +50,8 @@ body {
   -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
 }
-#app { display: flex; flex-direction: column; height: 100dvh; height: 100vh; width: 100vw; position: relative; }
-#main-ui { display: flex; flex-direction: column; height: 100dvh; height: 100vh; overflow: hidden; position: relative; z-index: 1; background: rgba(18,52,59,.08); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+#app { display: flex; flex-direction: column; min-height: 100dvh; min-height: 100vh; width: 100vw; position: relative; }
+#main-ui { display: flex; flex-direction: column; min-height: 100dvh; min-height: 100vh; position: relative; z-index: 1; background: rgba(18,52,59,.08); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
 
 /* ── SVG Icon System ── */
 .ic { display: inline-flex; align-items: center; justify-content: center; vertical-align: middle; width: 1em; height: 1em; font-size: inherit; }
@@ -106,9 +106,9 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 .tab-btn.active { background: var(--surface2); color: white; border-bottom-color: var(--accent); }
 
 /* ── Main Content ── */
-#main-content { flex: 1; overflow: hidden; position: relative; height: 100%; display: flex; flex-direction: column; min-height: 0; }
-.tab-content { display: none; flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; }
-.tab-content.active { display: flex; flex-direction: column; overflow: auto; min-height: 0; }
+#main-content { flex: 1; position: relative; display: flex; flex-direction: column; min-height: 0; }
+.tab-content { display: none; flex: 1; min-height: 0; }
+.tab-content.active { display: flex; flex-direction: column; min-height: 0; }
 
 /* ── Journey Tab ── */
 .resume-prompt {
@@ -228,10 +228,8 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 #stop-check-suggestions { top: 100%; bottom: auto; margin-top: 4px; max-height: 220px; }
 
 /* ── Results ── */
-#results-panel { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 10px 14px; max-width: 100%; box-sizing: border-box; min-height: 0; background: transparent; }
-#results-panel::-webkit-scrollbar { width: 3px; }
-#results-panel::-webkit-scrollbar-thumb { background: rgba(200,150,102,.2); border-radius: 2px; }
-#results-panel > * { max-width: 100%; overflow-x: hidden; box-sizing: border-box; }
+#results-panel { padding: 10px 14px; max-width: 100%; box-sizing: border-box; background: transparent; }
+#results-panel > * { max-width: 100%; box-sizing: border-box; }
 .panel-placeholder { text-align: center; color: var(--text2); font-size: 12px; padding: 30px 16px; overflow-x: hidden; }
 .loading { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px; color: var(--text2); }
 .spinner {
@@ -340,14 +338,14 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 .conn-long { background:transparent;color:var(--text2);opacity:.7; }
 
 /* ── Route Explorer ── */
-#route-explorer { display: flex; flex-direction: column; height: 100%; }
+#route-explorer { display: flex; flex-direction: column; }
 .route-search-row { display: flex; gap: 4px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
 .route-search-row input {
   flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
   background: #12343b; color: #e1b382; font-size: 13px; outline: none;
 }
 .route-search-row .btn-primary { flex: 0; white-space: nowrap; }
-#route-results { flex: 1; overflow-y: auto; padding: 8px 14px; }
+#route-results { padding: 8px 14px; }
 
 .route-info-header { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--surface2); border-radius: 8px; margin-bottom: 8px; }
 .route-info-number { font-size: 16px; font-weight: 700; }
@@ -361,13 +359,12 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 .route-stop-item .rs-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 .route-stop-item .rs-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .night-badge { font-size: 9px; font-weight: 700; background: #1a1a4a; color: #aaccff; padding: 2px 6px; border-radius: 4px; border: 1px solid #334488; }
+.route-label { font-size: 12px; font-weight: 700; color: #fff; background: var(--accent, #0050b3); padding: 2px 8px; border-radius: 4px; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,.4); text-align: center; line-height: 1.4; }
 .route-stop-marker .rs-inner-dot { display: none; }
 
 /* ── Bikes Tab ── */
-#bike-panel-content { display: flex; flex-direction: column; height: 100%; }
+#bike-panel-content { display: flex; flex-direction: column; }
 .bike-search-bar { padding: 10px 14px !important; border-bottom: 1px solid var(--border); }
-#bike-list { flex: 1; overflow-y: auto; }
-
 /* ── My Lines Section ── */
 .my-lines-section { padding: 8px 14px 4px; background: rgba(0,0,0,.08); border-bottom: 1px solid var(--border); }
 .my-lines-header { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; color: var(--accent); opacity: .7; padding-bottom: 4px; }
@@ -1604,11 +1601,6 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 .stop-popup-btn { width: 100%; padding: 6px 10px;   background: var(--accent); color: var(--accent-text); border: none; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: background .12s; }
 .stop-popup-btn:hover { background: #c89666; }
 
-::-webkit-scrollbar { width: 14px; }
-::-webkit-scrollbar-track { background: var(--surface2); border-radius: 7px; border: 2px solid var(--surface); }
-::-webkit-scrollbar-thumb { background: var(--accent); border-radius: 7px; border: 2px solid var(--surface); min-height: 40px; }
-::-webkit-scrollbar-thumb:hover { background: #c89666; }
-
 * { scrollbar-width: thin; scrollbar-color: var(--accent) var(--surface2); }
 
 .maplibregl-ctrl-top-right { top:10px!important;right:10px!important }
@@ -1629,7 +1621,6 @@ body.mode-3d .user-location-marker .user-loc-inner { animation: marker-breathe 1
 /* ── Mobile Responsive ── */
 @media (max-width: 768px) {
   :root { --header-h: 40px; --tab-h: 40px; }
-  ::-webkit-scrollbar { width: 10px; }
   .header-title { font-size: 12px; }
   .header-btn { padding: 8px 12px; min-height: 40px; font-size: 13px; }
   .status-indicator { font-size: 10px; }

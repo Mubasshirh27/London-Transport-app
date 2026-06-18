@@ -520,7 +520,7 @@
 
   /* Hide panels */
   UI.hidePanels = function() {
-    if (UI._clearDeparturesTimer) UI._clearDeparturesTimer();
+    if (UI._cleanupDeparturesTimer) UI._cleanupDeparturesTimer();
     if (departuresTimer) clearInterval(departuresTimer);
     departuresTimer = null;
     document.getElementById('nearby-panel').style.display = 'none';

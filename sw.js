@@ -1,4 +1,4 @@
-const CACHE = 'lt-cache-v2';
+const CACHE = 'lt-cache-v3';
 const API_CACHE = 'lt-api-v1';
 const TILE_CACHE = 'lt-tiles-v1';
 const BASE = (self.location.pathname.replace(/\/sw\.js$/, '') || '').replace(/\/+$/, '');

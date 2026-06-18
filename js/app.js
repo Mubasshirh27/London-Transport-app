@@ -10,7 +10,6 @@
   let bikeLocation = null;
   let bikePinTarget = null;
   let currentStationIndex = -1;
-  let _remOpen = true;
   let _walkOpen = {};
   let _lastLat = null;
   let _lastLon = null;
@@ -2024,7 +2023,7 @@
       });
       document.getElementById('bike-search-pin').addEventListener('click', () => {
         bikePinTarget = true;
-        UI.setMapPinMode('bike');
+        UI.setMapPinInteractive('bike');
       });
       document.addEventListener('bike-search-loc', async (e) => {
         const loc = e.detail;
@@ -2081,7 +2080,7 @@
 
         document.getElementById('bike-search-pin').addEventListener('click', () => {
           bikePinTarget = true;
-          UI.setMapPinMode('bike');
+          UI.setMapPinInteractive('bike');
           list.innerHTML = '<div class="no-data" style="padding:20px;text-align:center;color:var(--text2);font-size:11px">Click on the map to set bike search location</div>';
         }, opts);
 

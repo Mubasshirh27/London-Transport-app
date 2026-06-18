@@ -1,0 +1,171 @@
+FILE TREE
+═════════
+
+london-transport-app/
+├── index.html              ← The page itself
+├── sw.js                   ← Makes it work offline
+├── manifest.json           ← "Add to Home Screen"
+│
+├── css/
+│   └── style.css           ← All colors, layout, animations
+│
+├── js/                     ← ─── ALL THE CODE ───
+│   │
+│   │   CORE MODULES (used by others):
+│   ├── config.js           ← API keys, map settings
+│   ├── api.js              ← Talks to TfL servers
+│   ├── map.js              ← ALL map stuff (2D + 3D)
+│   ├── router.js           ← Plans routes, parses journeys
+│   ├── stops.js            ← Station/stop data
+│   ├── geocoder.js         ← Search for places
+│   ├── storage.js          ← Saves favorites/recents
+│   ├── status.js           ← Line delays/disruptions
+│   └── icons.js            ← SVG icons
+│   │
+│   │   UI MODULES (the interface):
+│   ├── ui-sidebar.js       ← Side panel with tabs
+│   ├── ui-journey.js       ← Journey results
+│   ├── ui-helpers.js       ← Popup messages
+│   ├── ui-departures.js    ← Live departure times
+│   ├── ui-timetable.js     ← Full day timetable
+│   ├── ui-nearby.js        ← Nearby stops + LIVE mode
+│   ├── ui-bikes.js         ← Santander cycles
+│   ├── ui-route.js         ← Route explorer
+│   └── ui-favorites.js     ← Saved places
+│   │
+│   └── app.js              ← THE BRAIN (ties everything)
+│
+├── img/                    ← App icons
+├── data/                   ← Extra data files
+└── docs/                   ← You are here
+
+
+HOW A JOURNEY WORKS (step by step)
+════════════════════════════════════
+
+1. You type "Paddington" → "Liverpool Street"
+                          │
+2. Hits Enter / taps Plan
+                          │
+3. app.js hears 'plan-journey' event
+                          │
+4. app.js calls Router.plan()
+                          │
+5. Router calls Api.getJourney()
+                          │
+6. Api fetches https://api.tfl.gov.uk/Journey/JourneyResults/...
+                          │
+7. TfL returns JSON with possible routes
+                          │
+8. Router.parseJourneys() extracts:
+   • Each leg (walk → tube → walk)
+   • Path coordinates (the line on map)
+   • Stops along the way
+   • fares, durations
+                          │
+9. app.js:
+   • Draws routes on map (MapView.addRoute)
+   • Puts markers at start/end (MapView.addMarker)
+   • Sends results to UI (UI.showResults)
+                          │
+10. You see cards with duration and price
+                          │
+11. Tap "Start" → GPS navigation begins
+                          │
+12. Every few seconds:
+    • Blue dot moves
+    • Map follows you
+    • Leg turns green when done
+    • Next leg highlights
+    • ETA updates
+    • Arrival notification when there
+
+
+GPS NAVIGATION LOOP
+═══════════════════
+
+   GPS SATELLITE
+        │
+        ▼
+   navigator.geolocation.watchPosition()
+        │
+        ▼
+   app.js gets: {lat, lon, heading, speed, accuracy}
+        │
+        ├──→ MapView.showUserLocation(lat, lon, heading, accuracy)
+        │       • Moves blue dot (no flicker)
+        │       • Rotates heading arrow
+        │       • Shows accuracy circle
+        │
+        ├──→ If follow mode is ON:
+        │       • MapView.panTo(lat, lon) — smooth follow
+        │       • MapView.setBearing(heading) — face direction of travel
+        │
+        ├──→ updateTripProgress(lat, lon, gpsPos)
+        │       • Check if near a stop → advance to next leg
+        │       • Check if arrived at destination
+        │       • Check if off route → offer reroute
+        │       • Update ETA
+        │       • Update progress bar
+        │
+        └──→ Show RECENTER button if follow is OFF
+
+
+3D MAP
+══════
+
+   Tap "3D" button
+        │
+        ▼
+   app.js creates maplibregl.Map()
+        │
+        ├── Raster tiles (same 3-provider fallback)
+        ├── OpenFreeMap building layer (3D buildings!)
+        ├── Fog + lighting effects
+        ├── Auto-rotation after 8s idle
+        │
+        ▼
+   MapView.syncs all markers from 2D → 3D
+        │
+   Tap "2D" → removes MapLibre, shows Leaflet again
+
+
+OFFLINE (Service Worker)
+════════
+
+   sw.js runs in background (separate from the app)
+
+   On install → caches all app files (HTML, CSS, JS, images)
+
+   On every fetch:
+   • Map tiles: cache first, network fallback
+   • Everything else: network first, cache fallback
+   • If both fail → returns offline placeholder
+
+   This is why the app works (partially) without internet.
+
+
+CUSTOM EVENTS (How files talk to each other)
+════════════════
+
+   Instead of FILE_1.call(FILE_2.doSomething()),
+   they use: document.dispatchEvent(new CustomEvent('event-name'))
+
+   app.js listens for ALL events.  UI files dispatch them.
+
+   Event              →  Dispatched by     →  app.js does
+   ───────────────────────────────────────────────────────
+   plan-journey       →  sidebar/journey   →  plans route, shows results
+   start-trip         →  journey           →  starts GPS, begins nav
+   end-trip           →  journey/app       →  stops GPS, cleans up
+   show-route         →  journey           →  draws route on map
+   open-departures    →  map/journey/app   →  shows departure board
+   toggle-live        →  sidebar           →  starts live tracking
+   toggle-map         →  sidebar/nearby    →  opens/closes map overlay
+   explore-route      →  sidebar/depart    →  shows route on map
+   bike-route-to      →  map/bikes         →  draws walking route to bike
+   bike-search-loc    →  app/nearby        →  shows bikes near point
+   clear-all          →  sidebar           →  resets everything
+   star-location      →  favorites         →  saves/unsaves place
+   map-pin-mode       →  sidebar           →  click map to set location
+   map-pin-loc        →  nearby/app        →  sets from/to from map click

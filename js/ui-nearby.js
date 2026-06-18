@@ -70,32 +70,12 @@
 
   UI.isBikeMarkersVisible = function() { return bikeMarkersVisible; };
 
-  UI.setMapPinMode = function(mode) {
+  UI.setMapPinInteractive = function(mode) {
     const overlay = document.getElementById('map-overlay');
     if (!overlay.classList.contains('open')) {
       document.dispatchEvent(new CustomEvent('toggle-map', { detail: { open: true } }));
     }
     UI.showError(mode === 'bike' ? 'Tap map to set bike search location' : 'Tap map to set location');
-    let handler;
-    if (mode === 'bike') {
-      handler = function(lat, lon) {
-        MapView.clearClick();
-        document.dispatchEvent(new CustomEvent('bike-search-loc', { detail: { lat, lon } }));
-      };
-    } else {
-      handler = function(lat, lon) {
-        MapView.clearClick();
-        document.dispatchEvent(new CustomEvent('map-pin-loc', { detail: { lat, lon, mode } }));
-      };
-    }
-    MapView.onClick(handler);
-    const cancelPin = function(e) {
-      if (e.detail && e.detail.open === false) {
-        MapView.clearClick();
-        document.removeEventListener('toggle-map', cancelPin);
-      }
-    };
-    document.addEventListener('toggle-map', cancelPin);
   };
 
   window.UI = UI;

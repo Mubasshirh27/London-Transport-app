@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 700" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#555"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#2979FF"/>
+    </marker>
+    <linearGradient id="headerGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00247D"/>
+      <stop offset="100%" style="stop-color:#0035B3"/>
+    </linearGradient>
+    <linearGradient id="gpsGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#00A86B"/>
+      <stop offset="100%" style="stop-color:#008050"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Title -->
+  <rect x="0" y="0" width="900" height="60" fill="url(#headerGrad)" rx="0"/>
+  <text x="450" y="38" fill="white" font-size="22" font-weight="bold" text-anchor="middle">LONDON TRANSPORT APP</text>
+
+  <!-- BIG PICTURE: 3 columns -->
+  <text x="20" y="100" fill="#333" font-size="16" font-weight="bold">USER ACTIONS →</text>
+  <text x="320" y="100" fill="#333" font-size="16" font-weight="bold">→ APP PROCESSING →</text>
+  <text x="620" y="100" fill="#333" font-size="16" font-weight="bold">→ WHAT YOU SEE</text>
+
+  <!-- Row 1: Open app -->
+  <rect x="20" y="120" width="240" height="55" rx="8" fill="#E8F0FE" stroke="#2979FF" stroke-width="2"/>
+  <text x="140" y="145" fill="#2979FF" font-size="14" font-weight="bold" text-anchor="middle">1. Open the app</text>
+  <text x="140" y="163" fill="#555" font-size="11" text-anchor="middle">index.html loads all JS files</text>
+
+  <line x1="260" y1="147" x2="310" y2="147" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="320" y="120" width="240" height="55" rx="8" fill="#FFF3E0" stroke="#FF9800" stroke-width="2"/>
+  <text x="440" y="145" fill="#E65100" font-size="14" font-weight="bold" text-anchor="middle">Config + API Loaded</text>
+  <text x="440" y="163" fill="#555" font-size="11" text-anchor="middle">config.js → api.js → router.js</text>
+
+  <line x1="560" y1="147" x2="610" y2="147" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="620" y="120" width="240" height="55" rx="8" fill="#E8F5E9" stroke="#4CAF50" stroke-width="2"/>
+  <text x="740" y="145" fill="#2E7D32" font-size="14" font-weight="bold" text-anchor="middle">Sidebar + Map</text>
+  <text x="740" y="163" fill="#555" font-size="11" text-anchor="middle">From/To boxes + map ready</text>
+
+  <line x1="140" y1="175" x2="140" y2="210" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Row 2: Plan journey -->
+  <rect x="20" y="215" width="240" height="55" rx="8" fill="#E8F0FE" stroke="#2979FF" stroke-width="2"/>
+  <text x="140" y="240" fill="#2979FF" font-size="14" font-weight="bold" text-anchor="middle">2. Type &amp; tap Plan</text>
+  <text x="140" y="258" fill="#555" font-size="11" text-anchor="middle">"Liverpool St" → "Heathrow"</text>
+
+  <line x1="260" y1="242" x2="310" y2="242" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="320" y="215" width="240" height="55" rx="8" fill="#FFF3E0" stroke="#FF9800" stroke-width="2"/>
+  <text x="440" y="240" fill="#E65100" font-size="14" font-weight="bold" text-anchor="middle">TfL API Called</text>
+  <text x="440" y="258" fill="#555" font-size="11" text-anchor="middle">Router.plan() → Api.getJourney()</text>
+
+  <line x1="560" y1="242" x2="610" y2="242" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="620" y="215" width="240" height="55" rx="8" fill="#E8F5E9" stroke="#4CAF50" stroke-width="2"/>
+  <text x="740" y="240" fill="#2E7D32" font-size="14" font-weight="bold" text-anchor="middle">Journey Cards</text>
+  <text x="740" y="258" fill="#555" font-size="11" text-anchor="middle">Duration / fare / changes</text>
+
+  <line x1="140" y1="270" x2="140" y2="305" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Row 3: Start trip -->
+  <rect x="20" y="310" width="240" height="55" rx="8" fill="#E8F0FE" stroke="#2979FF" stroke-width="2"/>
+  <text x="140" y="335" fill="#2979FF" font-size="14" font-weight="bold" text-anchor="middle">3. Tap Start</text>
+  <text x="140" y="353" fill="#555" font-size="11" text-anchor="middle">Pick a journey, start nav</text>
+
+  <line x1="260" y1="337" x2="310" y2="337" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="320" y="310" width="240" height="55" rx="8" fill="#FFF3E0" stroke="#FF9800" stroke-width="2"/>
+  <text x="440" y="335" fill="#E65100" font-size="14" font-weight="bold" text-anchor="middle">GPS Starts</text>
+  <text x="440" y="353" fill="#555" font-size="11" text-anchor="middle">watchPosition() every ~3s</text>
+
+  <line x1="560" y1="337" x2="610" y2="337" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="620" y="310" width="240" height="55" rx="8" fill="#E8F5E9" stroke="#4CAF50" stroke-width="2"/>
+  <text x="740" y="335" fill="#2E7D32" font-size="14" font-weight="bold" text-anchor="middle">Blue Dot + Route</text>
+  <text x="740" y="353" fill="#555" font-size="11" text-anchor="middle">Your location + path drawn</text>
+
+  <line x1="140" y1="365" x2="140" y2="400" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Row 4: Following -->
+  <rect x="20" y="405" width="240" height="55" rx="8" fill="#E8F0FE" stroke="#2979FF" stroke-width="2"/>
+  <text x="140" y="430" fill="#2979FF" font-size="14" font-weight="bold" text-anchor="middle">4. Walk / Ride</text>
+  <text x="140" y="448" fill="#555" font-size="11" text-anchor="middle">Or drag map to look around</text>
+
+  <line x1="260" y1="432" x2="310" y2="432" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="320" y="405" width="240" height="55" rx="8" fill="#FFF3E0" stroke="#FF9800" stroke-width="2"/>
+  <text x="440" y="424" fill="#E65100" font-size="12" font-weight="bold" text-anchor="middle">GPS: update progress</text>
+  <text x="440" y="440" fill="#555" font-size="11" text-anchor="middle">Check arrivals, advance leg</text>
+  <text x="440" y="454" fill="#555" font-size="11" text-anchor="middle">Check deviation → reroute</text>
+
+  <line x1="560" y1="432" x2="610" y2="432" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="620" y="405" width="240" height="55" rx="8" fill="#E8F5E9" stroke="#4CAF50" stroke-width="2"/>
+  <text x="740" y="430" fill="#2E7D32" font-size="14" font-weight="bold" text-anchor="middle">Live Guidance</text>
+  <text x="740" y="448" fill="#555" font-size="11" text-anchor="middle">ETA / next stop / progress</text>
+
+  <line x1="140" y1="460" x2="140" y2="495" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Row 5: Arrive -->
+  <rect x="20" y="500" width="240" height="55" rx="8" fill="#E8F0FE" stroke="#2979FF" stroke-width="2"/>
+  <text x="140" y="525" fill="#2979FF" font-size="14" font-weight="bold" text-anchor="middle">5. You arrive</text>
+  <text x="140" y="543" fill="#555" font-size="11" text-anchor="middle">Near destination stop</text>
+
+  <line x1="260" y1="527" x2="310" y2="527" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="320" y="500" width="240" height="55" rx="8" fill="#FFF3E0" stroke="#FF9800" stroke-width="2"/>
+  <text x="440" y="525" fill="#E65100" font-size="14" font-weight="bold" text-anchor="middle">Auto-detect arrival</text>
+  <text x="440" y="543" fill="#555" font-size="11" text-anchor="middle">Within threshold → fire event</text>
+
+  <line x1="560" y1="527" x2="610" y2="527" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="620" y="500" width="240" height="55" rx="8" fill="#E8F5E9" stroke="#4CAF50" stroke-width="2"/>
+  <text x="740" y="525" fill="#2E7D32" font-size="14" font-weight="bold" text-anchor="middle">"You have arrived!"</text>
+  <text x="740" y="543" fill="#555" font-size="11" text-anchor="middle">Trip ended, back to search</text>
+
+  <!-- BIG ARROW from top to bottom along left side -->
+  <text x="450" y="640" fill="#999" font-size="13" text-anchor="middle">1 → 2 → 3 → 4 → 5  (that's it)</text>
+
+  <!-- KEY in bottom right -->
+  <rect x="610" y="610" width="260" height="80" rx="8" fill="#FAFAFA" stroke="#CCC" stroke-width="1"/>
+  <text x="620" y="630" fill="#333" font-size="12" font-weight="bold">KEY</text>
+  <rect x="620" y="640" width="12" height="12" rx="2" fill="#E8F0FE" stroke="#2979FF" stroke-width="1"/>
+  <text x="638" y="651" fill="#555" font-size="11">YOU (user action)</text>
+  <rect x="620" y="658" width="12" height="12" rx="2" fill="#FFF3E0" stroke="#FF9800" stroke-width="1"/>
+  <text x="638" y="669" fill="#555" font-size="11">APP (processing in background)</text>
+  <rect x="620" y="676" width="12" height="12" rx="2" fill="#E8F5E9" stroke="#4CAF50" stroke-width="1"/>
+  <text x="638" y="687" fill="#555" font-size="11">MAP/UI (what you see on screen)</text>
+</svg>
