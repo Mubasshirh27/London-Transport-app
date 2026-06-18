@@ -152,12 +152,16 @@
 
   function toggleMap() {
     const overlay = document.getElementById('map-overlay');
-    if (overlay.classList.contains('floating') || overlay.dataset.tripFs) return;
+    if (overlay.dataset.tripFs) return;
+    if (overlay.classList.contains('floating')) {
+      overlay.classList.remove('floating', 'popout');
+    }
     const btn = document.getElementById('map-toggle-btn');
     mapOpen = !overlay.classList.contains('open');
     overlay.classList.toggle('open', mapOpen);
     btn.innerHTML = mapOpen ? '<span class="ic" data-ic="close"></span> Close' : '<span class="ic" data-ic="map"></span> Map';
     document.body.style.overflow = mapOpen ? 'hidden' : '';
+    if (!mapOpen) window.__legViewActive = false;
     document.dispatchEvent(new CustomEvent('toggle-map', { detail: { open: mapOpen } }));
     if (mapOpen && typeof MapView !== 'undefined') {
       setTimeout(() => {

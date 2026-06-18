@@ -4,14 +4,55 @@ const MapView = (() => {
   let mlMarkers = [], mlRouteLayers = [], mlStopMarkers = [], mlBikeMarkers = [], mlRouteStopMarkers = [], mlUserMarker = null;
   let routeIdCounter = 0;
   let markerData = [], routeData = [], stopMarkerData = [], bikeMarkerData = [], routeStopMarkerData = [], userLocData = null;
+  let userAccuracyCircle = null;
+
+  let tileLayer = null, tileProviderIdx = 0, tileFailCount = 0, tileFailTimer = null;
+  let swControlled = false;
 
   function init() {
-    map = L.map('map').setView(CONFIG.mapCenter, CONFIG.mapZoom);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a>'
-    }).addTo(map);
+    map = L.map('map', { rotate: true, touchRotate: true, rotateControl: { closeOnZeroBearing: false } }).setView(CONFIG.mapCenter, CONFIG.mapZoom);
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+      swControlled = true;
+    }
+    console.log(`Map init: serviceWorker=${navigator.serviceWorker ? 'supported' : 'unsupported'} controlled=${swControlled}`);
+    loadTileProvider(0);
     document.getElementById('map-legend')?.classList.remove('hidden');
     return map;
+  }
+
+  function loadTileProvider(idx) {
+    if (tileLayer) { map.removeLayer(tileLayer); tileLayer = null; }
+    const providers = CONFIG.tileProviders;
+    if (idx >= providers.length) {
+      console.warn('All tile providers failed — map will have no background tiles');
+      UI?.showError?.('Map tiles unavailable — no tile provider responded. Some features may be limited.');
+      return;
+    }
+    tileProviderIdx = idx;
+    tileFailCount = 0;
+    if (tileFailTimer) { clearTimeout(tileFailTimer); tileFailTimer = null; }
+    const p = providers[idx];
+    console.log(`Loading tile provider [${idx}]: ${p.name} url=${p.url.substring(0, 60)}...`);
+    tileLayer = L.tileLayer(p.url, { maxZoom: p.maxZoom || 19, attribution: p.attribution || '' })
+      .addTo(map)
+      .on('tileerror', (err) => {
+        tileFailCount++;
+        const errUrl = err?.tile?.src || err?.url || 'unknown';
+        console.warn(`Tile error #${tileFailCount} for "${p.name}": ${errUrl.substring(0, 80)}`);
+        if (tileFailTimer) clearTimeout(tileFailTimer);
+        tileFailTimer = setTimeout(() => {
+          if (tileFailCount >= 3) {
+            console.warn(`Tile provider "${p.name}" failed (${tileFailCount} errors in 2s), falling back to next...`);
+            loadTileProvider(idx + 1);
+          } else {
+            tileFailCount = 0;
+          }
+        }, 2000);
+      })
+      .on('tileload', () => {
+        tileFailCount = 0;
+      });
+    console.log(`Using tile provider: ${p.name}`);
   }
 
   function set3dMap(ml) { mlMap = ml; }
@@ -147,9 +188,16 @@ const MapView = (() => {
   }
   function clearClick() { if (_clickHandler) { map.off('click', _clickHandler); _clickHandler = null; } }
   function flyTo(lat, lon, zoom) {
-    if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return;
+    if (lat == null || lon == null || isNaN(lat) || isNaN(lon) || !isFinite(lat) || !isFinite(lon)) return;
+    map.stop();
     map.flyTo([lat, lon], zoom || 15, { duration: 0.6 });
     if (mlMap) mlMap.flyTo({ center: [lon, lat], zoom: (zoom || 15) - 1, duration: 600 });
+  }
+
+  function panTo(lat, lon) {
+    if (lat == null || lon == null || isNaN(lat) || isNaN(lon) || !isFinite(lat) || !isFinite(lon)) return;
+    map.panTo([lat, lon], { animate: true, duration: 0.5 });
+    if (mlMap) mlMap.panTo([lon, lat], { duration: 500 });
   }
   function getActiveCenter() {
     if (mlMap) {
@@ -387,20 +435,71 @@ const MapView = (() => {
     routeStopMarkerData = [];
   }
 
-  function showUserLocation(lat, lng) {
+  function showUserLocation(lat, lng, heading, accuracy) {
     if (lat == null || lng == null || isNaN(lat) || isNaN(lng)) return null;
+
+    if (userMarker) {
+      userMarker.setLatLng([lat, lng]);
+      userLocData = { lat, lng };
+
+      if (userAccuracyCircle) {
+        userAccuracyCircle.setLatLng([lat, lng]);
+        if (accuracy != null && accuracy > 0 && accuracy < 1000) {
+          userAccuracyCircle.setRadius(accuracy);
+        }
+      } else if (accuracy != null && accuracy > 0 && accuracy < 1000) {
+        userAccuracyCircle = L.circle([lat, lng], {
+          radius: accuracy, color: '#4285f4', fillColor: '#4285f4',
+          fillOpacity: 0.15, weight: 1, opacity: 0.3, interactive: false
+        }).addTo(map);
+      }
+
+      const el = userMarker.getElement();
+      if (el) {
+        const arrow = el.querySelector('.user-loc-heading');
+        if (arrow) {
+          if (heading != null && !isNaN(heading)) {
+            arrow.style.display = 'block';
+            arrow.style.transform = 'rotate(' + heading + 'deg)';
+          } else {
+            arrow.style.display = 'none';
+          }
+        }
+      }
+
+      if (mlUserMarker) {
+        mlUserMarker.setLngLat([lng, lat]);
+      }
+      return userMarker;
+    }
+
     hideUserLocation();
     userLocData = { lat, lng };
-    const html = '<div class="user-loc-inner"><div class="pulse-ring"></div></div>';
-    const icon = L.divIcon({ className:'user-location-marker', html, iconSize:[24,24], iconAnchor:[12,12] });
+
+    if (accuracy != null && accuracy > 0 && accuracy < 1000) {
+      userAccuracyCircle = L.circle([lat, lng], {
+        radius: accuracy, color: '#4285f4', fillColor: '#4285f4',
+        fillOpacity: 0.15, weight: 1, opacity: 0.3, interactive: false
+      }).addTo(map);
+    }
+
+    const showArrow = heading != null && !isNaN(heading);
+    const html = '<div class="user-loc-wrapper">'
+      + '<div class="user-loc-heading" style="display:' + (showArrow ? 'block' : 'none') + ';transform:rotate(' + (heading || 0) + 'deg)"></div>'
+      + '<div class="user-loc-inner"><div class="pulse-ring"></div></div>'
+      + '</div>';
+    const icon = L.divIcon({ className: 'user-location-marker', html, iconSize: [24, 24], iconAnchor: [12, 12] });
     userMarker = L.marker([lat, lng], { icon, zIndexOffset: 10000 }).addTo(map);
-    const mlm = makeMlMarker(lat, lng, html, 'user-location-marker');
+
+    const mlHtml = '<div class="user-loc-inner" style="width:12px;height:12px"><div class="pulse-ring" style="width:24px;height:24px;top:-6px;left:-6px"></div></div>';
+    const mlm = makeMlMarker(lat, lng, mlHtml, 'user-location-marker');
     if (mlm) { mlUserMarker = mlm; mlm.getElement().style.zIndex = '10000'; }
     return userMarker;
   }
 
   function hideUserLocation() {
     if (userMarker) { map.removeLayer(userMarker); userMarker = null; }
+    if (userAccuracyCircle) { map.removeLayer(userAccuracyCircle); userAccuracyCircle = null; }
     if (mlUserMarker) { mlUserMarker.remove(); mlUserMarker = null; }
     userLocData = null;
   }
@@ -413,10 +512,17 @@ const MapView = (() => {
   function onMoveEnd(cb) {
     offMoveEnd();
     moveEndHandler = () => { followMode = false; if (cb) cb(map.getCenter()); };
-    map.on('moveend', moveEndHandler);
+    map.on('dragstart', moveEndHandler);
+    map.on('zoomstart', moveEndHandler);
+    map.on('rotatestart', moveEndHandler);
   }
   function offMoveEnd() {
-    if (moveEndHandler) { map.off('moveend', moveEndHandler); moveEndHandler = null; }
+    if (moveEndHandler) {
+      map.off('dragstart', moveEndHandler);
+      map.off('zoomstart', moveEndHandler);
+      map.off('rotatestart', moveEndHandler);
+      moveEndHandler = null;
+    }
   }
 
   function resync3d() {
@@ -510,5 +616,5 @@ const MapView = (() => {
   }
 
   function getStopData(id) { return stopMarkerData.find(s => s.id === id); }
-  return { init, addMarker, addRoute, fitBounds, clearRoutes, clearMarkers, clearAll, onClick, clearClick, flyTo, getActiveCenter, getMap: () => map, showStopMarkers, hideStopMarkers, showBikeMarkers, hideBikeMarkers, showRouteStopMarkers, hideRouteStopMarkers, showUserLocation, hideUserLocation, isUserLocationVisible, setFollowMode, isFollowMode, onMoveEnd, offMoveEnd, showStopLivePopup, set3dMap, get3dMap, clear3dAll, clear3dState, resync3d, syncBikeMarkers3d, getStopData };
+  return { init, addMarker, addRoute, fitBounds, clearRoutes, clearMarkers, clearAll, onClick, clearClick, flyTo, panTo, getActiveCenter, getMap: () => map, showStopMarkers, hideStopMarkers, showBikeMarkers, hideBikeMarkers, showRouteStopMarkers, hideRouteStopMarkers, showUserLocation, hideUserLocation, isUserLocationVisible, setFollowMode, isFollowMode, onMoveEnd, offMoveEnd, showStopLivePopup, set3dMap, get3dMap, clear3dAll, clear3dState, resync3d, syncBikeMarkers3d, getStopData };
 })();

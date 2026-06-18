@@ -10,6 +10,10 @@
   let bikeLocation = null;
   let bikePinTarget = null;
   let currentStationIndex = -1;
+  let _remOpen = true;
+  let _walkOpen = {};
+  let _lastLat = null;
+  let _lastLon = null;
 
   const GREATER_LONDON = {
     north: 51.7,
@@ -19,6 +23,7 @@
   };
 
   function escapeHtml(str) { const d = document.createElement('div'); d.appendChild(document.createTextNode(str)); return d.innerHTML; }
+  function escapeAttr(str) { return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
   document.addEventListener('DOMContentLoaded', async () => {
     UI.init();
@@ -29,12 +34,14 @@
       const online = navigator.onLine;
       const badge = document.getElementById('offline-badge');
       const banner = document.getElementById('offline-banner');
+      const navBar = document.getElementById('trip-nav-bar');
       if (badge) badge.style.display = online ? 'none' : '';
-      if (banner) banner.style.display = (online || !tripActiveKey) ? 'none' : '';
+      if (banner) banner.style.display = (online || !navBar || navBar.style.display === 'none') ? 'none' : '';
       window._lastConnectionCheck = Date.now();
     }
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
+    updateOnlineStatus();
 
     // --- Resume prompt ---
     function doRestoreTrip(data) {
@@ -259,7 +266,7 @@
         UI.getToValue() && Store.addRecent(UI.getToValue());
       } catch (err) {
         console.error(err);
-        const msg = err.message && err.message.includes('404') ? 'Could not plan journey between these locations (they may be too far apart or outside London area). Check the locations match London.' : 'Could not plan journey. Check locations and try again.';
+        const msg = err && err.message && err.message.includes('404') ? 'Could not plan journey between these locations (they may be too far apart or outside London area). Check the locations match London.' : 'Could not plan journey. Check locations and try again.';
         UI.showError(msg);
       } finally {
         _planJourneyInProgress = false;
@@ -295,6 +302,7 @@
     let tripRerouting = false;
     let _navHeaderCleanup = null;
     let _gpsRetryCount = 0;
+    let _gpsRetryTimer = null;
     let recenterBtn = null;
     let followEnabled = true;
 
@@ -303,7 +311,10 @@
 
       return navigator.geolocation.watchPosition(
         (pos) => {
-          const { latitude: lat, longitude: lon, speed } = pos.coords;
+          if (tripWatchId === null) return;
+          if (!pos || !pos.coords) return;
+          const { latitude: lat, longitude: lon, speed, heading, accuracy } = pos.coords;
+          _lastLat = lat; _lastLon = lon;
           const now = Date.now();
           if (_posHistory.length && _posHistory[_posHistory.length - 1]) {
             const last = _posHistory[_posHistory.length - 1];
@@ -318,12 +329,26 @@
           if (_posHistory.length > 10) _posHistory.shift();
           _currentSpeed = Math.max(0.5, Math.min(3, _currentSpeed));
 
-          MapView.showUserLocation(lat, lon);
+          MapView.showUserLocation(lat, lon, heading, accuracy);
           if (followEnabled) {
-            MapView.flyTo(lat, lon, firstFix ? 14 : 16);
-            firstFix = false;
+            if (firstFix) {
+              MapView.flyTo(lat, lon, 14);
+              firstFix = false;
+            } else {
+              MapView.panTo(lat, lon);
+            }
+            if (heading != null && !isNaN(heading)) {
+              try {
+                const m = MapView.getMap();
+                if (m && typeof m.setBearing === 'function') {
+                  m.setBearing(heading, { animate: true, duration: 0.3 });
+                }
+              } catch {}
+            }
+            recenterBtn.style.display = 'none';
+          } else {
+            recenterBtn.style.display = 'inline-block';
           }
-          recenterBtn.style.display = 'inline-block';
           updateTripProgress(lat, lon, pos);
         },
         (err) => {
@@ -334,7 +359,10 @@
             document.dispatchEvent(new Event('end-trip'));
           } else {
             UI.showError('Navigation error, retrying... (' + _gpsRetryCount + '/3)');
-            setTimeout(() => {
+            clearTimeout(_gpsRetryTimer);
+            _gpsRetryTimer = setTimeout(() => {
+              if (tripWatchId === null) return;
+              navigator.geolocation.clearWatch(tripWatchId);
               tripWatchId = startGPSWatch();
             }, _gpsRetryCount * 2000);
           }
@@ -400,6 +428,7 @@
 
       // Clean up any previous trip resources before starting a new one
       if (tripWatchId !== null) { navigator.geolocation.clearWatch(tripWatchId); tripWatchId = null; }
+      if (_gpsRetryTimer) { clearTimeout(_gpsRetryTimer); _gpsRetryTimer = null; _gpsRetryCount = 0; }
       _cleanupNavHandlers();
 
       tripActiveKey = key;
@@ -411,7 +440,7 @@
       _posHistory = [];
       _currentSpeed = 1.4;
       _tripDelaySecs = 0;
-      currentStationIndex = 0;
+      currentStationIndex = getLegStartStationIndex(activeJourneys[key].legs, tripLegIndex);
       if (_autoEndTimer !== null) { clearTimeout(_autoEndTimer); _autoEndTimer = null; }
 
       // Switch to journey tab
@@ -419,18 +448,7 @@
       document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
       document.querySelector('.tab-btn[data-tab="journey"]').classList.add('active');
       document.getElementById('tab-journey').classList.add('active');
-
-      // Show floating map
-      const overlay = document.getElementById('map-overlay');
-      overlay.classList.remove('open', 'popout');
-      overlay.classList.add('floating');
-      overlay.style.left = '';
-      overlay.style.top = '';
-      overlay.style.bottom = '';
-      overlay.style.right = '';
-      overlay.style.width = '';
-      overlay.style.height = '';
-      setTimeout(() => { const m = MapView.getMap(); if (m) m.invalidateSize(); }, 50);
+      document.getElementById('results-panel').innerHTML = '';
 
       const tsBtn = document.getElementById('trip-start-btn');
       const teBtn = document.getElementById('trip-end-btn');
@@ -443,7 +461,6 @@
       const tripEta = document.getElementById('trip-eta');
 
       navBar.style.display = 'block';
-      navBar.classList.remove('collapsed');
       timeline.innerHTML = '<div style="display:flex;align-items:center;gap:6px;padding:8px 10px"><div class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;flex-shrink:0"></div><span>Locating you...</span></div>';
       recenterBtn.style.display = 'none';
       if (tripEta) tripEta.textContent = '';
@@ -491,11 +508,11 @@
 
       recenterBtn.onclick = () => {
         followEnabled = true;
+        recenterBtn.style.display = 'none';
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
             (pos) => {
               MapView.flyTo(pos.coords.latitude, pos.coords.longitude, 16);
-              setTimeout(() => { followEnabled = false; }, 10000);
             },
             () => { MapView.flyTo(51.5074, -0.1278, 14); },
             { enableHighAccuracy: true, timeout: 8000 }
@@ -503,80 +520,136 @@
         }
       };
 
-      MapView.onMoveEnd(() => { followEnabled = false; });
+      MapView.onMoveEnd(() => {
+        followEnabled = false;
+        recenterBtn.style.display = 'inline-block';
+      });
 
-      // Enrich path geometry from TfL Route Sequence API
+      // Enrich path geometry from TfL Route Sequence API (skip offline)
       const enrichJourney = activeJourneys[tripActiveKey];
-      if (enrichJourney) Router.enrichJourneyPaths(enrichJourney).catch(() => {});
+      if (enrichJourney && navigator.onLine) {
+        Router.enrichJourneyPaths(enrichJourney).then(() => {
+          const j = activeJourneys[tripActiveKey];
+          if (j && _lastLat != null) {
+            renderTripTimeline(j, j.legs, tripLegIndex, _lastLat, _lastLon, null, '');
+          }
+        }).catch(() => {});
+      }
 
       // Periodic state save
       if (_persistInterval) clearInterval(_persistInterval);
       _persistInterval = setInterval(saveTripState, 30000);
+      window.removeEventListener('beforeunload', saveTripState);
       window.addEventListener('beforeunload', saveTripState);
       document.addEventListener('visibilitychange', _onVisibilityChange);
 
-      // Trip nav toggle
+      // Bottom sheet drag (Google Maps style)
       const toggleBtn = document.getElementById('trip-nav-toggle');
       const navHeader = document.getElementById('trip-nav-header');
-      const doToggle = () => navBar.classList.toggle('collapsed');
-      toggleBtn.onclick = (e) => { e.stopPropagation(); doToggle(); };
-      let dragOccurred = false;
+      const SHEET_COLLAPSED = 56;
+      const SHEET_MID_RATIO = 0.45;
+      const SHEET_FULL_RATIO = 0.85;
+      let sheetState = 'mid';
+      let sheetStartY = 0, sheetStartHeight = 0;
+      let sheetDragging = false, sheetDragVelocity = 0, sheetLastTime = 0, sheetLastY = 0;
 
-      // Trip nav drag with safe-area clamping
-      let dragOffX = 0, dragOffY = 0;
-      const getSafe = (name) => { const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return parseFloat(v) || 0; };
-      const onDragStart = (ex) => {
-        dragOccurred = false;
-        const cx = ex.clientX ?? ex.touches[0].clientX;
-        const cy = ex.clientY ?? ex.touches[0].clientY;
-        const rect = navBar.getBoundingClientRect();
-        navBar.style.left = rect.left + 'px';
-        navBar.style.top = rect.top + 'px';
-        navBar.style.bottom = 'auto';
-        navBar.style.right = 'auto';
-        dragOffX = cx - rect.left;
-        dragOffY = cy - rect.top;
-        const onMove = (me) => {
-          dragOccurred = true;
-          const mx = me.clientX ?? me.touches[0].clientX;
-          const my = me.clientY ?? me.touches[0].clientY;
-          const safeL = getSafe('--safe-l'), safeT = getSafe('--safe-t'), safeR = getSafe('--safe-r'), safeB = getSafe('--safe-b');
-          const w = navBar.offsetWidth, h = navBar.offsetHeight;
-          const vw = window.innerWidth, vh = window.innerHeight;
-          const left = Math.max(safeL + 4, Math.min(mx - dragOffX, vw - w - safeR - 4));
-          const top = Math.max(safeT + 4, Math.min(my - dragOffY, vh - h - safeB - 4));
-          navBar.style.left = left + 'px';
-          navBar.style.top = top + 'px';
-        };
-        const onEnd = () => {
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup', onEnd);
-          document.removeEventListener('touchmove', onMove);
-          document.removeEventListener('touchend', onEnd);
-        };
-        document.addEventListener('mousemove', onMove);
-        document.addEventListener('mouseup', onEnd);
-        document.addEventListener('touchmove', onMove, { passive: true });
-        document.addEventListener('touchend', onEnd);
+      function getSheetTargetHeight(state) {
+        const vh = window.innerHeight;
+        const safeTop = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--safe-area-top') || '0', 10);
+        const safeBottom = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--safe-area-bottom') || '0', 10) ||
+          (window.visualViewport ? window.visualViewport.offsetTop : 0);
+        const availableH = vh - safeTop - safeBottom;
+        if (state === 'collapsed') return SHEET_COLLAPSED;
+        if (state === 'mid') return Math.round(availableH * SHEET_MID_RATIO);
+        const maxH = availableH - 40;
+        return Math.round(Math.min(maxH, vh * SHEET_FULL_RATIO));
+      }
+
+      function setSheetState(state, animate) {
+        sheetState = state;
+        const h = getSheetTargetHeight(state);
+        navBar.style.transition = animate !== false ? 'height 0.35s cubic-bezier(0.4, 0, 0.2, 1)' : 'none';
+        navBar.style.height = h + 'px';
+        navBar.style.transform = '';
+        toggleBtn.innerHTML = '<span class="ic" data-ic="' + (state === 'collapsed' ? 'chevron_up' : 'chevron_down') + '"></span>';
+        navBar.classList.toggle('collapsed', state === 'collapsed');
+      }
+
+      const onSheetStart = (e) => {
+        if (e.button !== undefined && e.button !== 0) return;
+        sheetStartY = e.touches ? e.touches[0].clientY : e.clientY;
+        sheetStartHeight = navBar.offsetHeight;
+        sheetDragging = true;
+        sheetLastTime = Date.now();
+        sheetLastY = sheetStartY;
+        sheetDragVelocity = 0;
+        navBar.style.transition = 'none';
+        navBar.style.willChange = 'height';
+        navBar.classList.remove('collapsed');
       };
-      const clickHandler = (e) => {
-        if (e.target.closest('#trip-nav-toggle')) return;
-        if (dragOccurred) { dragOccurred = false; return; }
-        doToggle();
-        // Restore CSS positioning so safe-area calc() takes effect
-        navBar.style.left = '';
-        navBar.style.top = '';
-        navBar.style.bottom = '';
-        navBar.style.right = '';
+
+      const onSheetMove = (e) => {
+        if (!sheetDragging) return;
+        e.preventDefault();
+        const cy = e.touches ? e.touches[0].clientY : e.clientY;
+        const delta = cy - sheetStartY;
+        const now = Date.now();
+        const dt = now - sheetLastTime;
+        if (dt > 0) sheetDragVelocity = (cy - sheetLastY) / dt;
+        sheetLastTime = now;
+        sheetLastY = cy;
+        const safeBottom = window.visualViewport ? window.visualViewport.offsetTop : 0;
+        const availableH = window.innerHeight - safeBottom;
+        const maxH = Math.min(availableH * SHEET_FULL_RATIO, availableH - 40);
+        const newH = Math.max(SHEET_COLLAPSED, Math.min(maxH, sheetStartHeight - delta));
+        navBar.style.height = newH + 'px';
       };
-      navHeader.addEventListener('mousedown', onDragStart);
-      navHeader.addEventListener('touchstart', onDragStart, { passive: true });
-      navHeader.addEventListener('click', clickHandler);
+
+      const onSheetEnd = () => {
+        if (!sheetDragging) return;
+        sheetDragging = false;
+        navBar.style.willChange = '';
+        const curH = navBar.offsetHeight;
+        const vh = window.innerHeight;
+        const safeBottom = window.visualViewport ? window.visualViewport.offsetTop : 0;
+        const availableH = vh - safeBottom;
+        const midH = Math.round(availableH * SHEET_MID_RATIO);
+        const fullH = Math.round(Math.min(availableH * SHEET_FULL_RATIO, availableH - 40));
+        let target;
+        if (curH < SHEET_COLLAPSED + (midH - SHEET_COLLAPSED) * 0.3 || (sheetDragVelocity > 0.5 && curH < midH)) {
+          target = 'collapsed';
+        } else if (curH < midH + (fullH - midH) * 0.4 || (sheetDragVelocity > 0.3 && curH < fullH)) {
+          target = 'mid';
+        } else {
+          target = 'full';
+        }
+        setSheetState(target, true);
+      };
+
+      toggleBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (sheetState === 'collapsed') setSheetState('mid');
+        else if (sheetState === 'mid') setSheetState('full');
+        else setSheetState('collapsed');
+      };
+
+      navHeader.addEventListener('mousedown', onSheetStart);
+      navHeader.addEventListener('touchstart', onSheetStart, { passive: true });
+      document.addEventListener('mousemove', onSheetMove);
+      document.addEventListener('mouseup', onSheetEnd);
+      document.addEventListener('touchmove', onSheetMove, { passive: false });
+      document.addEventListener('touchend', onSheetEnd);
       _navHeaderCleanup = [
-        { el: navHeader, type: 'mousedown', fn: onDragStart },
-        { el: navHeader, type: 'touchstart', fn: onDragStart, opts: { passive: true } },
-        { el: navHeader, type: 'click', fn: clickHandler }
+        { el: navHeader, type: 'mousedown', fn: onSheetStart },
+        { el: navHeader, type: 'touchstart', fn: onSheetStart, opts: { passive: true } },
+        { el: document, type: 'mousemove', fn: onSheetMove },
+        { el: document, type: 'mouseup', fn: onSheetEnd },
+        { el: document, type: 'touchmove', fn: onSheetMove, opts: { passive: false } },
+        { el: document, type: 'touchend', fn: onSheetEnd }
       ];
+
+      // Init sheet to mid state
+      setSheetState('mid', false);
 
       // --- Notification Setup ---
       if ('Notification' in window && Notification.permission === 'default') {
@@ -603,6 +676,8 @@
 
     document.addEventListener('end-trip', () => {
       if (tripWatchId !== null) { navigator.geolocation.clearWatch(tripWatchId); tripWatchId = null; }
+      if (_gpsRetryTimer) { clearTimeout(_gpsRetryTimer); _gpsRetryTimer = null; }
+      _gpsRetryCount = 0;
       if (window._ttlTimer) { clearTimeout(window._ttlTimer); window._ttlTimer = null; }
       window._notifiedAlight = false;
       _cleanupNavHandlers();
@@ -673,7 +748,7 @@
 
       const toggleMapPop = () => {
         const willBeMin = !isMinimized();
-        console.log('toggleMapPop called', { willBeMin, beforeClass: overlay.className, left: overlay.style.left, top: overlay.style.top, width: overlay.style.width, height: overlay.style.height });
+        console.debug('toggleMapPop called', { willBeMin, beforeClass: overlay.className, left: overlay.style.left, top: overlay.style.top, width: overlay.style.width, height: overlay.style.height });
         overlay.classList.toggle('popout', willBeMin);
         // Clear inline styles so CSS class rules take full effect in both directions
         overlay.style.left = '';
@@ -682,7 +757,7 @@
         overlay.style.right = '';
         overlay.style.width = '';
         overlay.style.height = '';
-        console.log('toggleMapPop after', { popout: overlay.classList.contains('popout'), className: overlay.className, left: overlay.style.left, top: overlay.style.top, width: overlay.style.width, height: overlay.style.height });
+        console.debug('toggleMapPop after', { popout: overlay.classList.contains('popout'), className: overlay.className, left: overlay.style.left, top: overlay.style.top, width: overlay.style.width, height: overlay.style.height });
         const m = MapView.getMap();
         if (m) {
           setTimeout(() => {
@@ -852,6 +927,7 @@
           e.preventDefault();
           e.stopPropagation();
           if (overlay.dataset.tripFs) {
+            window.__legViewActive = false;
             delete overlay.dataset.tripFs;
             overlay.style.transition = 'all 0.3s ease';
             overlay.classList.remove('open');
@@ -871,6 +947,12 @@
             // Handle 3D map restore
             if (map3dInstance) setTimeout(() => { map3dInstance.resize(); }, 150);
             setTimeout(() => { overlay.style.transition = ''; }, 300);
+          } else if (overlay.classList.contains('floating')) {
+            window.__legViewActive = false;
+            overlay.classList.remove('floating', 'popout');
+            document.getElementById('map-toggle-btn').innerHTML = '<span class="ic" data-ic="map"></span> Map';
+            document.body.style.overflow = '';
+            if (map3dInstance) setTimeout(() => { map3dInstance.resize(); }, 100);
           } else if (overlay.classList.contains('open')) {
             window.__legViewActive = false;
             overlay.classList.remove('open');
@@ -895,8 +977,10 @@
       let idx = 0;
       for (let i = 0; i < legIdx; i++) {
         const leg = legs[i];
+        if (!leg) continue;
+        if (leg.mode === 'walking' || leg.mode === 'cycling') continue;
         if (leg.from && leg.from.lat != null) idx++;
-        if (leg.stops) idx += leg.stops.filter(s => s.lat != null).length;
+        if (leg.stops) idx += leg.stops.filter(s => s.lat != null && s.lon != null).length;
         if (leg.to && leg.to.lat != null) idx++;
       }
       return idx;
@@ -933,6 +1017,29 @@
       return totalLen > 0 ? cumDist / totalLen : 0;
     }
 
+    function cleanWalkInstruction(instruction, modifier, distance) {
+      if (!instruction) return 'Walk';
+      let text = instruction;
+      // Remove "on to" and "onto"
+      text = text.replace(/\bon\s+to\s+/gi, '');
+      text = text.replace(/\bonto\s+/gi, '');
+      // Remove "continue for X metres/meters" patterns
+      text = text.replace(/,?\s*continue\s+for\s+[\d.]+\s*(metres|meters)/gi, '');
+      // Remove "for X metres/meters" at the start
+      text = text.replace(/^for\s+[\d.]+\s*(metres|meters)[,\s]*/gi, '');
+      text = text.replace(/^for\s+[\d.]+\s*(metres|meters)/gi, '');
+      // Remove trailing punctuation
+      text = text.replace(/,\s*$/, '');
+      text = text.trim();
+      // If empty, use modifier
+      if (!text) {
+        const action = { 'turn-left': 'Turn left', 'turn-right': 'Turn right', 'uturn': 'U-turn', 'sharp-left': 'Sharp left', 'sharp-right': 'Sharp right', 'slight-left': 'Slight left', 'slight-right': 'Slight right', 'depart': 'Start walking', 'arrive': 'Arrive', 'continue': 'Continue', 'merge': 'Merge' }[modifier] || 'Walk';
+        return action;
+      }
+      // Capitalize first letter
+      return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
     function getPathLength(path) {
       if (!path || path.length < 2) return 0;
       let len = 0;
@@ -944,7 +1051,8 @@
 
     function renderTripTimeline(journey, legs, tripLegIdx, lat, lon, distToNextStation, etaStr) {
       const container = document.getElementById('trip-timeline');
-      if (!container) return;
+      if (!container) { return; }
+      container.innerHTML = '';
 
       const currentLeg = legs[tripLegIdx];
       if (!currentLeg) return;
@@ -957,78 +1065,147 @@
       const legStartGlobalIdx = getLegStartStationIndex(legs, tripLegIdx);
       const perLegCurrentIdx = currentStationIndex - legStartGlobalIdx;
 
+      // Count remaining stations (upcoming stops + destinations) across all remaining legs
+      function countRemainingStops() {
+        let count = 0;
+        const cl = legs[tripLegIdx];
+        if (cl) {
+          if (cl.stops) {
+            const startIdx = Math.max(0, perLegCurrentIdx - (cl.from ? 1 : 0));
+            for (let i = startIdx; i < cl.stops.length; i++) {
+              if (cl.stops[i].lat != null && i > perLegCurrentIdx - (cl.from ? 1 : 0)) count++;
+            }
+          }
+          const lastStopIdx = (cl.from ? 1 : 0) + (cl.stops ? cl.stops.filter(s => s.lat != null).length : 0);
+          if (cl.to && perLegCurrentIdx < lastStopIdx) count++;
+        }
+        for (let r = tripLegIdx + 1; r < legs.length; r++) {
+          const rl = legs[r];
+          if (!rl || rl.mode === 'walking' || rl.mode === 'cycling') continue;
+          if (rl.from && rl.from.lat != null) count++;
+          if (rl.stops) count += rl.stops.filter(s => s.lat != null).length;
+          if (rl.to && rl.to.lat != null) count++;
+        }
+        return count;
+      }
+      const stopsRemaining = countRemainingStops();
+
       // --- Current leg stations header ---
       const modeIcon = Router.getModeIcon(currentLeg.mode);
-      const routeName = (currentLeg.modeName || currentLeg.mode || '') + (currentLeg.routeName ? ' ' + currentLeg.routeName : '');
+      const rawRoute = currentLeg.routeName || currentLeg.modeName || currentLeg.mode || 'Travel';
+      const routeName = Router.formatRouteName(rawRoute, currentLeg.mode) || rawRoute;
       const platform = currentLeg.platformName || '';
       const direction = currentLeg.direction || '';
       const depTime = currentLeg.departureTime ? new Date(currentLeg.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
       const arrTime = currentLeg.arrivalTime ? new Date(currentLeg.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
-      html += '<div class="tl-leg-header">';
-      html += '<span class="tl-leg-mode-icon">' + modeIcon + '</span>';
-      html += '<div class="tl-leg-info">';
-      html += '<div class="tl-leg-line-name">' + escapeHtml(routeName || 'Travel') + '</div>';
-      if (direction) html += '<div class="tl-leg-direction">→ ' + escapeHtml(direction) + '</div>';
-      html += '</div>';
-      if (platform) html += '<div class="tl-leg-platform">' + escapeHtml(platform) + '</div>';
-      html += '</div>';
+      if (currentLeg.mode !== 'walking') {
+        html += '<div class="tl-leg-header">';
+        html += '<span class="tl-leg-mode-icon">' + modeIcon + '</span>';
+        html += '<div class="tl-leg-info">';
+        html += '<div class="tl-leg-line-name">' + escapeHtml(routeName) + (direction ? ' <span class="tl-leg-dir">→ ' + escapeHtml(direction) + '</span>' : '') + '</div>';
+        html += '</div>';
+        if (platform) html += '<div class="tl-leg-platform">' + escapeHtml(platform) + '</div>';
+        html += '</div>';
+      }
 
       // --- Origin station (departed) ---
-      if (currentLeg.from) {
+      if (currentLeg.from && currentLeg.mode !== 'walking') {
         const isCompleted = perLegCurrentIdx > globalStationIdx;
         const isCurrent = perLegCurrentIdx === globalStationIdx;
         html += '<div class="tl-station ' + (isCompleted ? 'completed' : (isCurrent ? 'current' : 'upcoming')) + '">';
         html += '<div class="tl-dot"></div>';
         html += '<div class="tl-station-info">';
         html += '<span class="tl-station-name">' + escapeHtml(currentLeg.from.name || '') + '</span>';
-        html += '<span class="tl-station-check">✓</span>';
-        html += '<span class="tl-station-time">' + (depTime || '') + '</span>';
+        if (depTime) html += '<span class="tl-station-time">' + depTime + '</span>';
         html += '</div>';
         html += '</div>';
         globalStationIdx++;
       }
 
-      // --- Intermediate stops ---
-      if (currentLeg.stops && currentLeg.stops.length) {
+      // --- Intermediate stops (skip walking) ---
+      if (currentLeg.stops && currentLeg.stops.length && currentLeg.mode !== 'walking') {
+        let firstShown = false;
+        const colStops = [];
         for (const stop of currentLeg.stops) {
           if (!stop.lat || !stop.lon) continue;
           const isCompleted = perLegCurrentIdx > globalStationIdx;
           const isCurrent = perLegCurrentIdx === globalStationIdx;
           const stopState = isCompleted ? 'completed' : (isCurrent ? 'current' : 'upcoming');
 
-          const stopArr = stop.arrivalTime ? new Date(stop.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-
-          html += '<div class="tl-station ' + stopState + '" data-station-idx="' + globalStationIdx + '">';
-          html += '<div class="tl-dot"></div>';
-          html += '<div class="tl-station-info">';
-          html += '<span class="tl-station-name">' + escapeHtml(stop.name || '') + '</span>';
-          html += '<span class="tl-station-check">✓</span>';
-          if (isCurrent && distToNextStation !== null) {
-            html += '<span class="tl-you-are-here">You are here</span>';
-            html += '<span class="tl-station-dist">' + Math.round(distToNextStation) + 'm away</span>';
+          if (stopState === 'upcoming') {
+            if (!firstShown) {
+              firstShown = true;
+              html += '<div class="tl-station upcoming" data-station-idx="' + globalStationIdx + '">';
+              html += '<div class="tl-dot"></div>';
+              html += '<div class="tl-station-info">';
+              html += '<span class="tl-station-name">' + escapeHtml(stop.name || '') + '</span>';
+              html += '<span class="tl-next-stop-badge">Next stop</span>';
+              html += '</div></div>';
+            } else {
+              colStops.push({ stop, idx: globalStationIdx });
+            }
+          } else {
+            html += '<div class="tl-station ' + stopState + '" data-station-idx="' + globalStationIdx + '">';
+            html += '<div class="tl-dot"></div>';
+            html += '<div class="tl-station-info">';
+            html += '<span class="tl-station-name">' + escapeHtml(stop.name || '') + '</span>';
+            if (stopState === 'current' && distToNextStation !== null) {
+              html += '<span class="tl-you-are-here">' + Math.round(distToNextStation) + 'm away</span>';
+            }
+            html += '</div></div>';
           }
-          html += '<span class="tl-station-time">' + (stopArr || '') + '</span>';
-          html += '</div>';
-          html += '</div>';
           globalStationIdx++;
+        }
+        if (colStops.length > 0) {
+          const colId = 'tl-col-stops';
+          const colOpen = !!_walkOpen['_col'];
+          html += '<div class="tl-col-stops' + (colOpen ? ' open' : '') + '" id="' + colId + '">';
+          html += '<div class="tl-col-toggle">';
+          html += '<span class="tl-col-arrow">' + (colOpen ? '▼' : '▶') + '</span>';
+          html += '<span class="tl-col-summary">ride ' + colStops.length + ' stop' + (colStops.length > 1 ? 's' : '') + '</span>';
+          html += '</div>';
+          html += '<div class="tl-col-content" style="display:' + (colOpen ? 'block' : 'none') + '">';
+          for (const item of colStops) {
+            html += '<div class="tl-station-upcoming-compact">';
+            html += '<div class="tl-station-info">';
+            html += '<span class="tl-col-stop-name">▸ ' + escapeHtml(item.stop.name || '') + '</span>';
+            html += '</div></div>';
+          }
+          html += '</div></div>';
+          setTimeout(function() {
+            var el = document.getElementById(colId);
+            if (el) {
+              el.onclick = function(e) {
+                var toggle = el.querySelector('.tl-col-toggle');
+                if (toggle && !toggle.contains(e.target)) return;
+                var content = el.querySelector('.tl-col-content');
+                var arrow = el.querySelector('.tl-col-arrow');
+                var open = content.style.display !== 'none';
+                content.style.display = open ? 'none' : 'block';
+                arrow.textContent = open ? '▶' : '▼';
+                el.classList.toggle('open', !open);
+                _walkOpen['_col'] = !open;
+              };
+            }
+          }, 0);
         }
       }
 
-      // --- Destination station ---
-      if (currentLeg.to) {
+      // --- Destination station (skip walking) ---
+      if (currentLeg.to && currentLeg.mode !== 'walking') {
         const isCompleted = perLegCurrentIdx > globalStationIdx;
         const isCurrent = perLegCurrentIdx === globalStationIdx;
         const destState = isCompleted ? 'completed' : (isCurrent ? 'current' : 'upcoming');
+        const approachingDest = isCurrent && currentLeg.mode !== 'walking' && distToNextStation !== null && distToNextStation < 200;
 
         html += '<div class="tl-station ' + destState + '" data-station-idx="' + globalStationIdx + '">';
         html += '<div class="tl-dot"></div>';
         html += '<div class="tl-station-info">';
         html += '<span class="tl-station-name">' + escapeHtml(currentLeg.to.name || '') + '</span>';
-        html += '<span class="tl-station-check">✓</span>';
+        if (approachingDest) html += '<span class="tl-alight-badge">Get off</span>';
         if (isCurrent && distToNextStation !== null) {
-          html += '<span class="tl-you-are-here">You are here</span>';
-          html += '<span class="tl-station-dist">' + Math.round(distToNextStation) + 'm away</span>';
+          html += '<span class="tl-you-are-here">' + Math.round(distToNextStation) + 'm away</span>';
         }
         html += '<span class="tl-station-time">' + (arrTime || '') + '</span>';
         html += '</div>';
@@ -1036,88 +1213,166 @@
         globalStationIdx++;
       }
 
-      // --- Walking segment to next leg ---
-      const nextLeg = legs[tripLegIdx + 1];
-      if (nextLeg) {
-        const walkDist = nextLeg.path && nextLeg.path.length >= 2 ? Math.round(getPathLength(nextLeg.path)) : 0;
-        const walkDur = nextLeg.duration || 0;
-        const nextIcon = Router.getModeIcon(nextLeg.mode);
-
+      // --- Current walking leg summary ---
+      if (currentLeg.mode === 'walking') {
+        const walkDist = currentLeg.path && currentLeg.path.length >= 2 ? Math.round(getPathLength(currentLeg.path)) : 0;
+        const walkDur = currentLeg.duration || 0;
+        const walkDistStr = walkDist >= 1000 ? (walkDist / 1000).toFixed(1) + 'km' : walkDist + 'm';
         html += '<div class="tl-walking">';
         html += '<span class="tl-walking-icon">🚶</span>';
-        html += '<span class="tl-walking-text">Walk ' + walkDur + ' min to ' + escapeHtml(nextLeg.from ? nextLeg.from.name : 'next station') + '</span>';
-        if (walkDist > 0) html += '<span class="tl-walking-dist">' + walkDist + 'm</span>';
+        html += '<span class="tl-walking-text">Walk ' + walkDur + ' min</span>';
+        if (walkDist > 0) html += '<span class="tl-walking-dist">• ' + walkDistStr + '</span>';
         html += '</div>';
+      }
 
-        // Next leg header
-        const nextRouteName = (nextLeg.modeName || nextLeg.mode || '') + (nextLeg.routeName ? ' ' + nextLeg.routeName : '');
-        const nextPlatform = nextLeg.platformName || '';
-        const nextDir = nextLeg.direction || '';
-        const nextDepTime = nextLeg.departureTime ? new Date(nextLeg.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-        const nextArrTime = nextLeg.arrivalTime ? new Date(nextLeg.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
-
-        html += '<div class="tl-leg-header">';
-        html += '<span class="tl-leg-mode-icon">' + nextIcon + '</span>';
-        html += '<div class="tl-leg-info">';
-        html += '<div class="tl-leg-line-name">' + escapeHtml(nextRouteName || 'Travel') + '</div>';
-        if (nextDir) html += '<div class="tl-leg-direction">→ ' + escapeHtml(nextDir) + '</div>';
+      // --- Walking leg after current leg (standalone, outside collapsible) ---
+      let remStartIdx = tripLegIdx + 1;
+      const nextLegAfter = legs[tripLegIdx + 1];
+      if (nextLegAfter && nextLegAfter.mode === 'walking') {
+        const wlkDist = nextLegAfter.path && nextLegAfter.path.length >= 2 ? Math.round(getPathLength(nextLegAfter.path)) : 0;
+        const wlkDur = nextLegAfter.duration || 0;
+        const wlkDistStr = wlkDist >= 1000 ? (wlkDist / 1000).toFixed(1) + 'km' : wlkDist + 'm';
+        html += '<div class="tl-walking">';
+        html += '<span class="tl-walking-icon">🚶</span>';
+        html += '<span class="tl-walking-text">Walk ' + wlkDur + ' min</span>';
+        if (wlkDist > 0) html += '<span class="tl-walking-dist">• ' + wlkDistStr + '</span>';
         html += '</div>';
-        if (nextPlatform) html += '<div class="tl-leg-platform">' + escapeHtml(nextPlatform) + '</div>';
-        html += '</div>';
+        remStartIdx = tripLegIdx + 2;
+      }
 
-        // Next leg origin (where user will board)
-        if (nextLeg.from) {
-          html += '<div class="tl-station upcoming">';
-          html += '<div class="tl-dot"></div>';
-          html += '<div class="tl-station-info">';
-          html += '<span class="tl-station-name">' + escapeHtml(nextLeg.from.name || '') + '</span>';
-          html += '<span class="tl-station-check">✓</span>';
-          html += '<span class="tl-station-time">' + (nextDepTime || '') + '</span>';
+      // --- Remaining legs (always visible) ---
+      const remainingStopsCount = stopsRemaining;
+      if (remainingStopsCount > 0) {
+        html += '<div class="tl-rem-content" style="display:block">';
+
+        // All remaining legs (starting from remStartIdx)
+        for (let ri = remStartIdx; ri < legs.length; ri++) {
+          const remLeg = legs[ri];
+          if (!remLeg) { html += '</div><div style="display:none">'; continue; }
+
+          // Walking segment before this leg
+          if (remLeg.mode === 'walking') {
+            const walkDist = remLeg.path && remLeg.path.length >= 2 ? Math.round(getPathLength(remLeg.path)) : 0;
+            const walkDur = remLeg.duration || 0;
+            const walkDistStr = walkDist >= 1000 ? (walkDist / 1000).toFixed(1) + 'km' : walkDist + 'm';
+            html += '<div class="tl-walking">';
+            html += '<span class="tl-walking-icon">🚶</span>';
+            html += '<span class="tl-walking-text">Walk ' + walkDur + ' min</span>';
+            if (walkDist > 0) html += '<span class="tl-walking-dist">• ' + walkDistStr + '</span>';
+            html += '</div>';
+            continue;
+          }
+
+          // Transit leg header
+          const remIcon = Router.getModeIcon(remLeg.mode);
+          const remRawRoute = remLeg.routeName || remLeg.modeName || remLeg.mode || 'Travel';
+          const remRouteName = Router.formatRouteName(remRawRoute, remLeg.mode) || remRawRoute;
+          const remDir = remLeg.direction || '';
+          const remDepTime = remLeg.departureTime ? new Date(remLeg.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+          const remArrTime = remLeg.arrivalTime ? new Date(remLeg.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+          html += '<div class="tl-leg-header tl-rem-leg-header">';
+          html += '<span class="tl-leg-mode-icon">' + remIcon + '</span>';
+          html += '<div class="tl-leg-info">';
+          html += '<div class="tl-leg-line-name">' + escapeHtml(remRouteName) + (remDir ? ' <span class="tl-leg-dir">→ ' + escapeHtml(remDir) + '</span>' : '') + '</div>';
           html += '</div>';
+          if (remLeg.platformName) html += '<div class="tl-leg-platform">' + escapeHtml(remLeg.platformName) + '</div>';
           html += '</div>';
-        }
 
-        // Next leg stops preview (show 3 max)
-        if (nextLeg.stops && nextLeg.stops.length) {
-          const previewStops = nextLeg.stops.slice(0, 3);
-          for (const stop of previewStops) {
-            if (!stop.lat || !stop.lon) continue;
-            const stopArr = stop.arrivalTime ? new Date(stop.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+          // Origin + departure countdown
+          if (remLeg.from) {
+            let depCountdown = '';
+            if (remLeg.departureTime) {
+              const depMs = new Date(remLeg.departureTime).getTime();
+              const minsUntil = Math.round((depMs - now) / 60000);
+              if (minsUntil > 0 && minsUntil <= 30) depCountdown = 'Departs in ' + minsUntil + ' min';
+              else if (minsUntil <= 0 && minsUntil > -5) depCountdown = 'Departs now';
+            }
             html += '<div class="tl-station upcoming">';
             html += '<div class="tl-dot"></div>';
             html += '<div class="tl-station-info">';
-            html += '<span class="tl-station-name">' + escapeHtml(stop.name || '') + '</span>';
-            html += '<span class="tl-station-check">✓</span>';
-            html += '<span class="tl-station-time">' + (stopArr || '') + '</span>';
+            html += '<span class="tl-station-name">' + escapeHtml(remLeg.from.name || '') + '</span>';
+            html += '<span class="tl-station-time">' + (remDepTime || '') + '</span>';
+            if (depCountdown) html += '<span class="tl-dep-countdown">' + depCountdown + '</span>';
             html += '</div>';
             html += '</div>';
           }
-          if (nextLeg.stops.length > 3) {
-            html += '<div class="tl-station upcoming" style="opacity:.4;font-size:9px;padding:2px 0 2px 20px">+' + (nextLeg.stops.length - 3) + ' more stops</div>';
+
+          // All intermediate stops (compact, collapsible)
+          if (remLeg.stops && remLeg.stops.length) {
+            let remFirstShown = false;
+            const remColStops = [];
+            for (const stop of remLeg.stops) {
+              if (!stop.name) continue;
+              if (!remFirstShown) {
+                remFirstShown = true;
+                html += '<div class="tl-station-upcoming-compact">';
+                html += '<div class="tl-station-info">';
+                html += '<span class="tl-col-stop-name">▸ ' + escapeHtml(stop.name || '') + '</span>';
+                html += '</div></div>';
+              } else {
+                remColStops.push(stop);
+              }
+            }
+            if (remColStops.length > 0) {
+              const remColId = 'tl-rem-stops-' + ri;
+              const remColOpen = !!_walkOpen['_remc_' + ri];
+              html += '<div class="tl-col-stops' + (remColOpen ? ' open' : '') + '" id="' + remColId + '">';
+              html += '<div class="tl-col-toggle">';
+              html += '<span class="tl-col-arrow">' + (remColOpen ? '▼' : '▶') + '</span>';
+              html += '<span class="tl-col-summary">ride ' + remColStops.length + ' stop' + (remColStops.length > 1 ? 's' : '') + '</span>';
+              html += '</div>';
+              html += '<div class="tl-col-content" style="display:' + (remColOpen ? 'block' : 'none') + '">';
+              for (const item of remColStops) {
+                html += '<div class="tl-station-upcoming-compact">';
+                html += '<div class="tl-station-info">';
+                html += '<span class="tl-col-stop-name">▸ ' + escapeHtml(item.name || '') + '</span>';
+                html += '</div></div>';
+              }
+              html += '</div></div>';
+              (function(id, ri) {
+                setTimeout(function() {
+                  var el = document.getElementById(id);
+                  if (el) {
+                    el.onclick = function(e) {
+                      var toggle = el.querySelector('.tl-col-toggle');
+                      if (toggle && !toggle.contains(e.target)) return;
+                      var content = el.querySelector('.tl-col-content');
+                      var arrow = el.querySelector('.tl-col-arrow');
+                      var open = content.style.display !== 'none';
+                      content.style.display = open ? 'none' : 'block';
+                      arrow.textContent = open ? '▶' : '▼';
+                      el.classList.toggle('open', !open);
+                      _walkOpen['_remc_' + ri] = !open;
+                    };
+                  }
+                }, 0);
+              })(remColId, ri);
+            }
+          }
+
+          // Destination station
+          if (remLeg.to) {
+            html += '<div class="tl-station upcoming">';
+            html += '<div class="tl-dot"></div>';
+            html += '<div class="tl-station-info">';
+            html += '<span class="tl-station-name">' + escapeHtml(remLeg.to.name || '') + '</span>';
+            html += '<span class="tl-station-time">' + (remArrTime || '') + '</span>';
+            html += '</div>';
+            html += '</div>';
           }
         }
 
-        // Next leg destination
-        if (nextLeg.to) {
-          html += '<div class="tl-station upcoming">';
-          html += '<div class="tl-dot"></div>';
-          html += '<div class="tl-station-info">';
-          html += '<span class="tl-station-name">' + escapeHtml(nextLeg.to.name || '') + '</span>';
-          html += '<span class="tl-station-check">✓</span>';
-          html += '<span class="tl-station-time">' + (nextArrTime || '') + '</span>';
-          html += '</div>';
-          html += '</div>';
-        }
+        html += '</div>';
       }
 
-      // --- Destination footer ---
+      // --- Footer ---
       const destLeg = legs[legs.length - 1];
       const destName = destLeg && destLeg.to ? (destLeg.to.name || 'Destination') : 'Destination';
 
       html += '<div class="tl-footer">';
-      html += '<div class="tl-footer-label">Final Destination</div>';
       html += '<div class="tl-footer-leg">';
-      html += '<span>📍</span>';
+      html += '<span class="tl-footer-icon">📍</span>';
       html += '<span class="tl-footer-name">' + escapeHtml(destName) + '</span>';
       if (etaStr) html += '<span class="tl-footer-time">ETA ' + escapeHtml(etaStr) + '</span>';
       html += '</div>';
@@ -1198,16 +1453,17 @@
       });
 
       // Auto-zoom to show full journey on first render
-      const hasStations = allStations.length > 0;
-      if (hasStations) {
-        const lats = allStations.map(s => s.lat);
-        const lons = allStations.map(s => s.lon);
+      const validStations = allStations.filter(s => s.lat != null && s.lon != null && !isNaN(s.lat) && !isNaN(s.lon));
+      if (validStations.length > 0) {
+        const lats = validStations.map(s => s.lat);
+        const lons = validStations.map(s => s.lon);
         const minLat = Math.min(...lats), maxLat = Math.max(...lats);
         const minLon = Math.min(...lons), maxLon = Math.max(...lons);
         const midLat = (minLat + maxLat) / 2;
         const midLon = (minLon + maxLon) / 2;
-        // Zoom out enough to see the full journey
-        MapView.flyTo(midLat, midLon, 12);
+        if (!isNaN(midLat) && !isNaN(midLon)) {
+          MapView.flyTo(midLat, midLon, 12);
+        }
       }
     }
 
@@ -1244,7 +1500,7 @@
       // --- Re-render map routes when leg index changes ---
       if (tripLegIndex !== lastRenderedLegIndex) {
         // When leg changes, set currentStationIndex to the new leg's starting station index
-        currentStationIndex = getLegStartStationIndex(legs, tripLegIndex);
+      currentStationIndex = getLegStartStationIndex(legs, tripLegIndex);
         window._notifiedAlight = false;
         renderTripRoutes();
         lastRenderedLegIndex = tripLegIndex;
@@ -1367,8 +1623,8 @@
       const eta = new Date(Date.now() + remainingSecs * 1000);
       const etaStr = eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-      // --- Connection Alert Check (every 30s) ---
-      if (!tripArrived && tripLegIndex < legs.length - 1 && now - (window._lastConnectionCheck || 0) > 30000) {
+      // --- Connection Alert Check (every 30s, offline-safe) ---
+      if (!tripArrived && tripLegIndex < legs.length - 1 && now - (window._lastConnectionCheck || 0) > 30000 && navigator.onLine) {
         window._lastConnectionCheck = now;
         const nextLeg = legs[tripLegIndex + 1];
         if (nextLeg && nextLeg.from && nextLeg.from.id && nextLeg.mode !== 'walking' && ['bus','tube','dlr','overground','elizabeth-line','national-rail','tram'].includes(nextLeg.mode)) {
@@ -1401,6 +1657,7 @@
       let nearestStationIdx = 0;
       let nearestStationDist = Infinity;
       const cur = legs[tripLegIndex];
+      const legStartGlobalIdx = getLegStartStationIndex(legs, tripLegIndex);
 
       if (cur && cur.mode !== 'walking') {
         const allStations = [];
@@ -1426,8 +1683,9 @@
           prevDist = d;
         }
 
-        if (currentStationIndex !== nearestStationIdx) {
-          currentStationIndex = nearestStationIdx;
+        const candidateStationIdx = nearestStationIdx + legStartGlobalIdx;
+        if (candidateStationIdx > currentStationIndex) {
+          currentStationIndex = candidateStationIdx;
         }
 
         const nextStationItem = allStations.find(s => s.idx === nearestStationIdx + 1);
@@ -1437,7 +1695,7 @@
           distToNextStation = haversine(lat, lon, cur.to.lat, cur.to.lon);
         }
       } else if (cur && cur.mode === 'walking') {
-        currentStationIndex = 0;
+        currentStationIndex = legStartGlobalIdx;
       }
 
       // --- Update UI ---
@@ -1485,6 +1743,7 @@
     }
 
     async function triggerReroute(fromLat, fromLon) {
+      if (!navigator.onLine) { tripRerouting = false; showRerouteNotification('Cannot reroute while offline'); return; }
       if (!activeJourneys || !tripActiveKey) { tripRerouting = false; return; }
       const oldJourney = activeJourneys[tripActiveKey];
       if (!oldJourney || !oldJourney.legs.length) { tripRerouting = false; return; }
@@ -1557,7 +1816,8 @@
         setTimeout(() => { const m = MapView.getMap && MapView.getMap(); if (m && m.invalidateSize) m.invalidateSize(); }, 100);
       }
       const fromLat = bikeLocation.lat, fromLon = bikeLocation.lon;
-      const route = await Api.getWalkingRoute(fromLat, fromLon, lat, lon);
+      let route;
+      try { route = await Api.getWalkingRoute(fromLat, fromLon, lat, lon); } catch (e) { UI.showError('Could not fetch walking route'); return; }
       const coords = (route && route.coords) ? route.coords : [[fromLat, fromLon], [lat, lon]];
       MapView.clearRoutes(); MapView.clearMarkers();
       MapView.addRoute(coords, '#0019a8');
@@ -1714,11 +1974,11 @@
           const results = await Geocoder.search(q);
           if (results.length) {
             suggestionsEl.innerHTML = results.map(r =>
-              `<div class="suggestion-item" data-label="${r.label}" data-lat="${r.lat}" data-lon="${r.lon}" data-type="${r.type}">
-                <span class="sug-type">${r.type === 'stop' ? '🚏' : '📍'}</span>
-                <span class="sug-label">${r.label}</span>
-                <span class="sug-sub">${(r.fullLabel || '').substring(0, 100)}</span>
-              </div>`
+               `<div class="suggestion-item" data-label="${escapeAttr(r.label)}" data-lat="${r.lat}" data-lon="${r.lon}" data-type="${escapeAttr(r.type)}">
+                 <span class="sug-type">${r.type === 'stop' ? '🚏' : '📍'}</span>
+                 <span class="sug-label">${escapeHtml(r.label)}</span>
+                 <span class="sug-sub">${escapeHtml((r.fullLabel || '').substring(0, 100))}</span>
+               </div>`
             ).join('');
             suggestionsEl.classList.add('active');
           } else {
@@ -1837,10 +2097,10 @@
             if (abort.signal.aborted) return;
             if (results.length) {
               suggestionsEl.innerHTML = results.map(r =>
-                `<div class="suggestion-item" data-label="${r.label}" data-lat="${r.lat}" data-lon="${r.lon}" data-type="${r.type}">
+                `<div class="suggestion-item" data-label="${escapeAttr(r.label)}" data-lat="${r.lat}" data-lon="${r.lon}" data-type="${escapeAttr(r.type)}">
                   <span class="sug-type">${r.type === 'stop' ? '🚏' : '📍'}</span>
-                  <span class="sug-label">${r.label}</span>
-                <span class="sug-sub">${(r.fullLabel || '').substring(0, 100)}</span>
+                  <span class="sug-label">${escapeHtml(r.label)}</span>
+                <span class="sug-sub">${escapeHtml((r.fullLabel || '').substring(0, 100))}</span>
                 </div>`
               ).join('');
               suggestionsEl.classList.add('active');
@@ -1955,62 +2215,73 @@ function start3DMap() {
         btn.textContent = '◀ 2D';
         btn.classList.add('active3d');
 
-        const style = {
-          version: 8,
-          sources: {
-            base: {
-              type: 'raster',
-              tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-              tileSize: 256,
-              attribution: '© OpenStreetMap contributors',
-              maxzoom: 19
-            }
-          },
-          layers: [
-            { id: 'bg', type: 'background', paint: { 'background-color': '#080a10' } },
-            { id: 'base-raster', type: 'raster', source: 'base' }
-          ]
-        };
-
-        async function fetchBuildingsChunked() {
-          const GRID = 4;
-          const latStep = (GREATER_LONDON.north - GREATER_LONDON.south) / GRID;
-          const lonStep = (GREATER_LONDON.east - GREATER_LONDON.west) / GRID;
-
-          const chunks = [];
-          for (let row = 0; row < GRID; row++) {
-            for (let col = 0; col < GRID; col++) {
-              const s = GREATER_LONDON.south + row * latStep;
-              const n = s + latStep;
-              const w = GREATER_LONDON.west + col * lonStep;
-              const e = w + lonStep;
-              const bbox = `${s},${w},${n},${e}`;
-              const query = `[out:json][timeout:25][maxsize:1073741824];way["building"](${bbox});out geom;`;
-              chunks.push(
-                fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`)
-                  .then(r => r.json())
-                  .then(d => d.elements || [])
-                  .catch(() => [])
-              );
-            }
-          }
-
-          const results = await Promise.all(chunks);
-          const allBuildings = results.flat();
-
-          return allBuildings
-            .filter(el => el.geometry && el.geometry.length >= 3)
-            .map(el => ({
-              type: 'Feature',
-              geometry: {
-                type: 'Polygon',
-                coordinates: [el.geometry.map(g => [g.lon, g.lat])]
-              },
-              properties: {
-                height: Math.min(parseFloat(el.tags?.height) || parseFloat(el.tags?.['building:levels']) * 3 || 5, 80),
-                levels: parseFloat(el.tags?.['building:levels']) || 1
+        let tile3dIdx = 0;
+        function makeTileStyle(idx) {
+          const p = CONFIG.tileProvider3d[idx];
+          if (!p) return null;
+          return {
+            version: 8,
+            sources: {
+              base: {
+                type: 'raster',
+                tiles: [p.url],
+                tileSize: 256,
+                attribution: p.attribution || '© OpenStreetMap contributors',
+                maxzoom: p.maxZoom || 19
               }
-            }));
+            },
+            layers: [
+              { id: 'bg', type: 'background', paint: { 'background-color': '#080a10' } },
+              { id: 'base-raster', type: 'raster', source: 'base' }
+            ]
+          };
+        }
+
+        function switchTileProvider3d() {
+          tile3dIdx++;
+          if (tile3dIdx >= CONFIG.tileProvider3d.length) {
+            console.warn('All 3D tile providers failed');
+            UI?.showError?.('3D map tiles unavailable — no tile provider responded.');
+            return;
+          }
+          const src = map3dInstance.getSource('base');
+          const p = CONFIG.tileProvider3d[tile3dIdx];
+          if (src && p) {
+            try { src.setTiles([p.url]); } catch {
+              map3dInstance.setStyle(makeTileStyle(tile3dIdx));
+              map3dInstance.once('style.load', () => {
+                map3dInstance.addControl(new maplibregl.NavigationControl(), 'top-right');
+                MapView.set3dMap(map3dInstance);
+                MapView.resync3d();
+              });
+            }
+            console.log(`3D tile provider: ${p.name}`);
+          }
+        }
+
+        const style = makeTileStyle(0);
+
+        function addBuildingLayer() {
+          if (map3dInstance.getLayer('bld-fill')) return;
+          try {
+            map3dInstance.addSource('bld', {
+              type: 'vector',
+              url: 'https://tiles.openfreemap.org/planet'
+            });
+            map3dInstance.addLayer({
+              id: 'bld-fill',
+              type: 'fill-extrusion',
+              source: 'bld',
+              'source-layer': 'building',
+              minzoom: 14,
+              paint: {
+                'fill-extrusion-color': 'hsl(35,8%,85%)',
+                'fill-extrusion-height': ['get', 'render_height'],
+                'fill-extrusion-base': ['get', 'render_min_height'],
+                'fill-extrusion-opacity': 0.8
+              }
+            });
+          } catch {}
         }
 
         try {
@@ -2029,41 +2300,36 @@ function start3DMap() {
           setTimeout(() => MapView.syncBikeMarkers3d(), 500);
           setTimeout(() => MapView.syncBikeMarkers3d(), 2000);
           map3dInstance.addControl(new maplibregl.NavigationControl(), 'top-right');
+          let tile3dFailCount = 0, tile3dFailTimer = null;
+          map3dInstance.on('error', (e) => {
+            if (e.error && e.error.status === 0 && tile3dIdx < CONFIG.tileProvider3d.length - 1) {
+              tile3dFailCount++;
+              if (tile3dFailTimer) clearTimeout(tile3dFailTimer);
+              tile3dFailTimer = setTimeout(() => {
+                if (tile3dFailCount >= 3) {
+                  console.warn(`3D tile provider failed (${tile3dFailCount} errors), switching`);
+                  switchTileProvider3d();
+                  tile3dFailCount = 0;
+                }
+              }, 2000);
+            }
+          });
           map3dInstance.on('click', (e) => handleMapClick(e.lngLat.lat, e.lngLat.lng));
 
+          let buildingsLoaded = false;
           map3dInstance.on('load', () => {
             document.querySelector('#map-3d .loading')?.remove();
             document.body.classList.add('mode-3d');
             map3dInstance.resize();
-            console.log('3D load event fired, running resync3d');
+            console.debug('3D load event fired, running resync3d');
             MapView.resync3d();
             if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
 
-            (async () => {
+            if (!buildingsLoaded) {
+              buildingsLoaded = true;
               if (map3dInstance.getZoom() < 13) return;
-              const status = document.getElementById('map-legend');
-              const origHTML = status ? status.innerHTML : '';
-              if (status) status.innerHTML += ' <span style="color:#888;font-size:10px">Loading buildings…</span>';
-              const feats = await fetchBuildingsChunked();
-              if (status && origHTML) status.innerHTML = origHTML;
-              if (feats.length > 0 && map3dInstance && !map3dInstance.getLayer('bld-extrude')) {
-                map3dInstance.addSource('bld', {
-                  type: 'geojson',
-                  data: { type: 'FeatureCollection', features: feats }
-                });
-                map3dInstance.addLayer({
-                  id: 'bld-extrude',
-                  type: 'fill-extrusion',
-                  source: 'bld',
-                  paint: {
-                    'fill-extrusion-color': ['interpolate', ['linear'], ['get', 'levels'], 1, '#2e3340', 3, '#3e4558', 6, '#50587a', 10, '#6070a0'],
-                    'fill-extrusion-height': ['get', 'height'],
-                    'fill-extrusion-base': 0,
-                    'fill-extrusion-opacity': 0.75
-                  }
-                });
-              }
-            })();
+              addBuildingLayer();
+            }
 
             try { map3dInstance.setFog({ range: [0.5, 8], color: '#0d0f15', 'high-color': '#141e2a', 'space-color': '#030508', 'horizon-blend': 0.2 }); } catch {}
             try { map3dInstance.setLight({ anchor: 'viewport', position: [80, 50, 30] }); } catch {}
@@ -2094,7 +2360,7 @@ function start3DMap() {
           mapEl.style.display = 'block';
           btn.textContent = '🧊 3D';
           btn.classList.remove('active3d');
-          UI.showError('3D view failed: ' + e.message);
+          UI.showError('3D view failed: ' + (e && e.message || e));
         }
       }
 
@@ -2123,7 +2389,7 @@ function start3DMap() {
 
         if (wasMinimizedFor3D) {
           wasMinimizedFor3D = false;
-          overlay.classList.add('popout');
+          overlay.classList.add('floating', 'popout');
         }
 
         const m = MapView.getMap();
@@ -2183,11 +2449,11 @@ function start3DMap() {
           const results = await Geocoder.search(q);
           if (results.length) {
             suggestionsEl.innerHTML = results.map(r =>
-              `<div class="suggestion-item" data-label="${r.label}" data-lat="${r.lat}" data-lon="${r.lon}">
-                <span class="sug-type">📍</span>
-                <span class="sug-label">${r.label}</span>
-                <span class="sug-sub">${(r.fullLabel || '').substring(0, 80)}</span>
-              </div>`
+               `<div class="suggestion-item" data-label="${escapeAttr(r.label)}" data-lat="${r.lat}" data-lon="${r.lon}">
+                 <span class="sug-type">📍</span>
+                 <span class="sug-label">${escapeHtml(r.label)}</span>
+                 <span class="sug-sub">${escapeHtml((r.fullLabel || '').substring(0, 80))}</span>
+               </div>`
             ).join('');
             suggestionsEl.classList.add('active');
           } else {
@@ -2240,9 +2506,19 @@ function start3DMap() {
         MapView.setFollowMode(true);
         watchId = navigator.geolocation.watchPosition(
           (pos) => {
-            const { latitude: lat, longitude: lon } = pos.coords;
-            MapView.showUserLocation(lat, lon);
-            if (MapView.isFollowMode()) MapView.flyTo(lat, lon, 16);
+            const { latitude: lat, longitude: lon, heading, accuracy } = pos.coords;
+            MapView.showUserLocation(lat, lon, heading, accuracy);
+            if (MapView.isFollowMode()) {
+              MapView.panTo(lat, lon);
+              if (heading != null && !isNaN(heading)) {
+                try {
+                  const m = MapView.getMap();
+                  if (m && typeof m.setBearing === 'function') {
+                    m.setBearing(heading, { animate: true, duration: 0.3 });
+                  }
+                } catch {}
+              }
+            }
             UI.showNearbyStops(lat, lon, true);
           },
           (err) => { UI.showError('Location error: ' + err.message); toggleLiveOff(); },
@@ -2273,6 +2549,63 @@ function start3DMap() {
         btn.innerHTML = '<span class="ic" data-ic="gps"></span>';
       }
     });
+
+    // --- GPS Simulation for testing follow behavior ---
+    (function setupSimulation() {
+      const simBtn = document.getElementById('simulate-btn');
+      if (!simBtn) return;
+      let simTimer = null, simLat = 51.515, simLon = -0.142, simHeading = 90;
+      let simLeg = 0; // 0=east, 1=south, 2=west, 3=north
+      let simStep = 0, simStepsPerLeg = 14;
+      const SIM_STEP_M = 15, SIM_INTERVAL = 2000;
+
+      function advanceSim() {
+        const distDeg = SIM_STEP_M / 111320;
+        const lonScale = 1 / Math.cos(simLat * Math.PI / 180);
+        simLat += distDeg * Math.cos(simHeading * Math.PI / 180);
+        simLon += distDeg * Math.sin(simHeading * Math.PI / 180) * lonScale;
+        simStep++;
+        if (simStep >= simStepsPerLeg) {
+          simStep = 0;
+          simLeg = (simLeg + 1) % 4;
+          simHeading = [90, 180, 270, 0][simLeg];
+        }
+        const accuracy = 10 + Math.random() * 20;
+        MapView.showUserLocation(simLat, simLon, simHeading, accuracy);
+        if (typeof followEnabled !== 'undefined' && followEnabled) {
+          MapView.panTo(simLat, simLon);
+          try {
+            const m = MapView.getMap();
+            if (m && typeof m.setBearing === 'function') {
+              m.setBearing(simHeading, { animate: true, duration: 0.3 });
+            }
+          } catch {}
+        }
+        _lastLat = simLat; _lastLon = simLon;
+        if (tripActiveKey && activeJourneys && activeJourneys[tripActiveKey]) {
+          const fakePos = { coords: { latitude: simLat, longitude: simLon, speed: 1.4, heading: simHeading, accuracy: accuracy } };
+          updateTripProgress(simLat, simLon, fakePos);
+        }
+      }
+
+      simBtn.addEventListener('click', () => {
+        if (simTimer) {
+          clearInterval(simTimer); simTimer = null;
+          simBtn.textContent = '▶ Sim';
+          simBtn.style.background = '';
+          MapView.hideUserLocation();
+          return;
+        }
+        simLat = 51.515; simLon = -0.142;
+        simHeading = 90; simLeg = 0; simStep = 0;
+        MapView.setFollowMode(true);
+        followEnabled = true;
+        simTimer = setInterval(advanceSim, SIM_INTERVAL);
+        simBtn.textContent = '● SIM';
+        simBtn.style.background = '#e32017';
+        advanceSim();
+      });
+    })();
 
     // --- Open departures from map stop click ---
     document.addEventListener('open-departures', (e) => {

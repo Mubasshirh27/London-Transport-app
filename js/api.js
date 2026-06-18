@@ -17,11 +17,21 @@ const Api = (() => {
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join('&');
     const url = `${BASE}${endpoint}?${qs}`;
-    const res = await fetch(url);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    let res;
+    try {
+      res = await fetch(url, { signal: controller.signal });
+    } catch (e) {
+      clearTimeout(timeoutId);
+      if (e.name === 'AbortError') throw new Error('TfL API timeout');
+      throw e;
+    }
+    clearTimeout(timeoutId);
     if (!res.ok && res.status !== 300) {
       let body = '';
       try { body = await res.text(); } catch {}
-      console.error(`TfL API ${res.status} for ${url}`, body);
+      console.error(`TfL API ${res.status} for ${url.replace(/app_key=[^&]+/, 'app_key=REDACTED')}`, body);
       throw new Error(`TfL API error: ${res.status}`);
     }
     return res.json();

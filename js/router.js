@@ -75,34 +75,17 @@ const Router = (() => {
   }
 
   function extractPath(leg) {
-    // Source 1: leg.path.lineString
+    // Source 1: leg.path.lineString (best — actual route geometry)
     if (leg.path && leg.path.lineString) {
       const coords = decodePath(leg.path.lineString);
       if (coords.length >= 2) return coords;
     }
-    // Source 2: leg.path.stopPoints
-    if (leg.path && leg.path.stopPoints && Array.isArray(leg.path.stopPoints)) {
-      const coords = leg.path.stopPoints.map(s => {
-        if (s.lat != null && s.lon != null) return [parseFloat(s.lat), parseFloat(s.lon)];
-        return null;
-      }).filter(Boolean);
-      if (coords.length >= 2) return coords;
-    }
-    // Source 3: leg.route.path
+    // Source 2: leg.route.path (TfL route polyline)
     if (leg.route && leg.route.path) {
       const coords = decodePath(leg.route.path);
       if (coords.length >= 2) return coords;
     }
-    // Source 4: leg.path as array of objects
-    if (leg.path && Array.isArray(leg.path)) {
-      const coords = leg.path.map(p => {
-        if (Array.isArray(p) && p.length >= 2) return [parseFloat(p[0]), parseFloat(p[1])];
-        if (p.lat != null && p.lon != null) return [parseFloat(p.lat), parseFloat(p.lon)];
-        return null;
-      }).filter(Boolean);
-      if (coords.length >= 2) return coords;
-    }
-    // Source 5: leg.from + leg.to as fallback (always works)
+    // Source 3: leg.from + leg.to as clean 2-point fallback
     if (leg.from && leg.to) {
       const fromLat = leg.from.lat ?? leg.from.latitude;
       const fromLon = leg.from.lon ?? leg.from.longitude;
@@ -120,7 +103,7 @@ const Router = (() => {
 
     return data.journeys.map(j => {
       const legs = (j.legs || []).map(l => {
-        const mode = l.mode ? l.mode.id || l.mode.name : 'walking';
+        const mode = l.mode ? (l.mode.id || l.mode.name || 'walking') : 'walking';
         const path = extractPath(l);
         return {
         mode: mode.toLowerCase(),
@@ -130,19 +113,32 @@ const Router = (() => {
         detail: l.instruction ? l.instruction.detailed || '' : '',
         departureTime: l.departureTime || '',
         arrivalTime: l.arrivalTime || '',
-        from: l.departurePoint ? { lat: l.departurePoint.lat, lon: l.departurePoint.lon, name: l.departurePoint.commonName, id: l.departurePoint.id } : (l.from ? { lat: l.from.lat, lon: l.from.lon, name: l.from.name || l.from.commonName, id: l.from.id } : null),
-        to: l.arrivalPoint ? { lat: l.arrivalPoint.lat, lon: l.arrivalPoint.lon, name: l.arrivalPoint.commonName, id: l.arrivalPoint.id } : (l.to ? { lat: l.to.lat, lon: l.to.lon, name: l.to.name || l.to.commonName, id: l.to.id } : null),
-        routeName: l.route ? l.route.name : '',
-        lineId: (l.route && l.route.id) || (l.routeOptions && l.routeOptions[0] && l.routeOptions[0].lineId) || '',
+        from: l.departurePoint ? { lat: l.departurePoint.lat, lon: l.departurePoint.lon, name: l.departurePoint.commonName, id: l.departurePoint.id || l.departurePoint.naptanId || '' } : (l.from ? { lat: l.from.lat, lon: l.from.lon, name: l.from.name || l.from.commonName, id: l.from.id || l.from.naptanId || '' } : null),
+        to: l.arrivalPoint ? { lat: l.arrivalPoint.lat, lon: l.arrivalPoint.lon, name: l.arrivalPoint.commonName, id: l.arrivalPoint.id || l.arrivalPoint.naptanId || '' } : (l.to ? { lat: l.to.lat, lon: l.to.lon, name: l.to.name || l.to.commonName, id: l.to.id || l.to.naptanId || '' } : null),
+        routeName: (l.route && l.route.name) || (l.routeOptions && l.routeOptions[0] && (l.routeOptions[0].lineIdentifier?.name || l.routeOptions[0].name)) || l.lineName || l.lineId || '',
+        lineId: (l.route && l.route.id) || (l.routeOptions && l.routeOptions[0] && (l.routeOptions[0].lineIdentifier?.id || l.routeOptions[0].lineId)) || l.lineId || '',
         platformName: l.platformName || '',
-        direction: l.direction || '',
+        direction: l.direction || (l.routeOptions && l.routeOptions[0] && l.routeOptions[0].direction) || '',
         path,
         hasFixedLocations: (l.hasFixedLocations != null) ? l.hasFixedLocations : undefined,
-        stops: (l.path?.stopPoints || []).map(s => ({
-          name: s.name,
-          lat: s.lat,
-          lon: s.lon
-        }))
+        walkSteps: (l.instruction && l.instruction.steps) ? l.instruction.steps.map(s => ({
+          instruction: s.description || s.instruction || '',
+          name: s.streetName || '',
+          distance: s.distance || 0,
+          modifier: (s.turnDirection || s.modifier || '').toLowerCase().replace(/\s+/g, '-')
+        })) : [],
+        stops: (() => {
+          const rawStops = l.path?.stopPoints || [];
+          const depId = (l.departurePoint?.id || l.departurePoint?.naptanId || l.departurePoint?.stopId || '').toString();
+          const arrId = (l.arrivalPoint?.id || l.arrivalPoint?.naptanId || l.arrivalPoint?.stopId || '').toString();
+          return rawStops.filter(s => {
+            if (!s) return false;
+            const sid = (s.id || s.naptanId || s.stopId || '').toString();
+            if (depId && sid && depId === sid) return false;
+            if (arrId && sid && arrId === sid) return false;
+            return true;
+          }).map(s => ({ name: s.name || s.commonName || '', lat: s.lat, lon: s.lon }));
+        })()
       };
       });
 
@@ -263,6 +259,7 @@ const Router = (() => {
 
     apiOpts.nationalSearch = true;
     apiOpts.alternativeWalking = true;
+    apiOpts.journeyPreference = 'LeastTime';
     if (opts.walkingSpeed) apiOpts.walkingSpeed = opts.walkingSpeed;
 
     const raw = await Api.getJourney(fromStr, toStr, apiOpts);
@@ -275,8 +272,12 @@ const Router = (() => {
     let fastest, cheapest, balanced;
     if (transitJourneys.length) {
       fastest = transitJourneys.reduce((a, b) => a.duration < b.duration ? a : b);
-      cheapest = transitJourneys.reduce((a, b) => (a.estimatedFare ?? 999) < (b.estimatedFare ?? 999) ? a : b);
-      const byBalance = [...transitJourneys].sort((a, b) => (a.transfers - b.transfers) || (a.walkDuration - b.walkDuration));
+      cheapest = transitJourneys.reduce((a, b) => {
+        const af = a.estimatedFare != null ? a.estimatedFare : a.fare != null ? a.fare : 999;
+        const bf = b.estimatedFare != null ? b.estimatedFare : b.fare != null ? b.fare : 999;
+        return af < bf ? a : b;
+      });
+      const byBalance = [...transitJourneys].sort((a, b) => (a.transfers - b.transfers) || (a.walkDuration - b.walkDuration) || (a.duration - b.duration));
       balanced = byBalance.find(j => j !== fastest && j !== cheapest) || byBalance[0];
     } else {
       // Only walking available — show it
@@ -337,12 +338,6 @@ const Router = (() => {
       const coords = parseWktLineString(routeData.lineString);
       if (coords.length >= 2) return coords;
     }
-    if (routeData.stopPointSequences && routeData.stopPointSequences.length) {
-      const stops = routeData.stopPointSequences[0].stopPoint || [];
-      if (stops.length >= 2) {
-        return stops.map(s => [parseFloat(s.lat), parseFloat(s.lon)]).filter(c => !isNaN(c[0]) && !isNaN(c[1]));
-      }
-    }
     return [];
   }
 
@@ -364,23 +359,80 @@ const Router = (() => {
     return routeName && routeName.toUpperCase().startsWith('N');
   }
 
+  function formatRouteName(routeName, mode) {
+    if (!routeName) return '';
+    const railModes = ['tube', 'dlr', 'overground', 'elizabeth-line', 'national-rail', 'tram'];
+    if (railModes.includes(mode) && !routeName.toLowerCase().includes('line')) {
+      return routeName + ' Line';
+    }
+    return routeName;
+  }
+
   async function enrichLegPath(leg) {
-    if (!leg || leg.mode === 'walking' || leg.mode === 'cycling' || !leg.routeName || !leg.from || !leg.to) return;
-    // Skip if we already have a good path (>2 points) from the journey response
-    if (leg.path && leg.path.length >= 3) return;
-    const lineId = leg.routeName;
+    if (!leg || leg.mode === 'walking' || leg.mode === 'cycling' || !leg.from || !leg.to) return;
+    const apiLineId = leg.lineId || leg.routeName;
+    if (!apiLineId) return;
+    if (leg.path && leg.path.length >= 3 && leg.stops && leg.stops.length >= 2 && leg.stops.some(s => s.lat != null && s.lon != null)) return;
+    const lineId = apiLineId;
     const dirsToTry = leg.direction ? [leg.direction] : [];
     dirsToTry.push('inbound', 'outbound');
+    let bestStops = null, bestPath = null;
     for (const dir of dirsToTry) {
       try {
         const data = await Api.getLineRoutes(lineId, dir);
-        if (!data || !data.lineStrings || !data.lineStrings.length) continue;
+        if (!data) continue;
         const enriched = extractRoutePath(data);
-        if (enriched.length >= 2) { leg.path = enriched; }
-        const stops = extractRouteStops(data);
-        if (stops.length >= 2) { leg.stops = stops; }
-        return; // Success — stop trying directions
+        if (enriched.length >= 2) { bestPath = enriched; }
+        if (data.stopPointSequences && data.stopPointSequences.length) {
+          const fromLat = parseFloat(leg.from.lat);
+          const fromLon = parseFloat(leg.from.lon);
+          const toLat = parseFloat(leg.to.lat);
+          const toLon = parseFloat(leg.to.lon);
+          const fromId = leg.from.id;
+          const toId = leg.to.id;
+          for (const seq of data.stopPointSequences) {
+            if (!seq.stopPoint) continue;
+            const stops = seq.stopPoint.filter(s => s.lat != null && s.lon != null).map(s => ({
+              id: s.id || s.stopId || s.stationId || '',
+              name: s.name || s.commonName || '',
+              lat: parseFloat(s.lat),
+              lon: parseFloat(s.lon)
+            }));
+            if (stops.length < 2) continue;
+            const hasFrom = stops.some(s => (s.id && fromId && s.id === fromId) || (Math.abs(s.lat - fromLat) < 0.001 && Math.abs(s.lon - fromLon) < 0.001));
+            if (!hasFrom) continue;
+            const hasTo = stops.some(s => (s.id && toId && s.id === toId) || (Math.abs(s.lat - toLat) < 0.001 && Math.abs(s.lon - toLon) < 0.001));
+            if (!hasTo) continue;
+            if (stops.length >= 2) { bestStops = stops; break; }
+          }
+        }
+        if (bestStops) break;
       } catch {}
+    }
+    if (bestPath) leg.path = bestPath;
+    if (bestStops && bestStops.length >= 2) {
+      const fromId = leg.from.id;
+      const toId = leg.to.id;
+      const fromLat = parseFloat(leg.from.lat);
+      const fromLon = parseFloat(leg.from.lon);
+      const toLat = parseFloat(leg.to.lat);
+      const toLon = parseFloat(leg.to.lon);
+      let fromIdx = bestStops.findIndex(s => s.id && fromId && s.id === fromId);
+      if (fromIdx < 0) {
+        fromIdx = bestStops.findIndex(s => Math.abs(s.lat - fromLat) < 0.001 && Math.abs(s.lon - fromLon) < 0.001);
+      }
+      let toIdx = -1;
+      if (fromIdx >= 0) {
+        toIdx = bestStops.findIndex(s => s.id && toId && s.id === toId);
+        if (toIdx < 0) {
+          toIdx = bestStops.findIndex(s => Math.abs(s.lat - toLat) < 0.001 && Math.abs(s.lon - toLon) < 0.001);
+        }
+      }
+      if (fromIdx >= 0 && toIdx >= 0 && fromIdx < toIdx) {
+        leg.stops = bestStops.slice(fromIdx + 1, toIdx);
+      } else {
+        leg.stops = bestStops;
+      }
     }
   }
 
@@ -390,5 +442,5 @@ const Router = (() => {
     await Promise.allSettled(transitLegs.map(l => enrichLegPath(l)));
   }
 
-  return { plan, getModeColor, getModeIcon, parseJourneys, parseWktLineString, extractRoutePath, extractRouteStops, isNightRoute, enrichLegPath, enrichJourneyPaths };
+  return { plan, getModeColor, getModeIcon, parseJourneys, parseWktLineString, extractRoutePath, extractRouteStops, isNightRoute, formatRouteName, enrichLegPath, enrichJourneyPaths };
 })();

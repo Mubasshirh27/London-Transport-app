@@ -15,17 +15,90 @@ const STATIC = [
   '/js/ui-nearby.js', '/js/ui-bikes.js',
   '/js/ui-route.js', '/js/ui-favorites.js',
   '/js/ui-helpers.js', '/js/app.js',
-  '/img/icon.svg', '/manifest.json'
+  '/img/icon.svg', '/img/icon-192.png', '/img/icon-512.png',
+  '/img/people-walking-across-a-busy-city-street-with-blurred-background-photo.jpg',
+  '/manifest.json'
 ].map(p => p ? BASE + p : BASE + '/');
 
 const API_PATTERNS = ['api.tfl.gov.uk', 'tfl.gov.uk', 'transportapi.com'];
+const TILE_HOSTS = ['tile.openstreetmap.org', 'tiles.basemaps.cartocdn.com', 'server.arcgisonline.com'];
 
-function isApiRequest(url) {
-  return API_PATTERNS.some(p => url.hostname.includes(p));
+function isApiRequest(url) { return API_PATTERNS.some(p => url.hostname.includes(p)); }
+function isTileRequest(url) { return TILE_HOSTS.some(h => url.hostname.includes(h)); }
+function isCdnRequest(url) { return url.hostname.includes('cdn.') || url.hostname.includes('unpkg.com'); }
+
+function offlineResponse(body, status) {
+  return new Response(body || '', { status: status || 503, statusText: 'Offline' });
 }
 
-function isTileRequest(url) {
-  return url.hostname.includes('tile.openstreetmap.org');
+async function fromCacheOrFallback(request, cacheName) {
+  const cache = await caches.open(cacheName || CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  return offlineResponse('', 503);
+}
+
+async function fetchAndCache(request, cacheName) {
+  const response = await fetch(request);
+  if (response.ok) {
+    const cache = await caches.open(cacheName || CACHE);
+    cache.put(request, response.clone());
+  }
+  return response;
+}
+
+async function handleRequest(request) {
+  const url = new URL(request.url);
+
+  try {
+    if (isTileRequest(url)) {
+      const cached = await caches.open(TILE_CACHE).then(c => c.match(request));
+      if (cached) return cached;
+      return await fetchAndCache(request, TILE_CACHE);
+    }
+
+    if (isApiRequest(url)) {
+      try {
+        return await fetchAndCache(request, API_CACHE);
+      } catch {
+        return await fromCacheOrFallback(request, API_CACHE);
+      }
+    }
+
+    if (isCdnRequest(url)) {
+      const cached = await caches.match(request);
+      if (cached) return cached;
+      try {
+        return await fetchAndCache(request, CACHE);
+      } catch {
+        return offlineResponse('', 503);
+      }
+    }
+
+    if (url.protocol === 'chrome-extension:') {
+      try { return await fetch(request); } catch { return offlineResponse('', 503); }
+    }
+
+    if (url.origin === self.location.origin && STATIC.some(p => url.pathname === p)) {
+      const cached = await caches.match(request);
+      if (cached) return cached;
+      try {
+        return await fetchAndCache(request, CACHE);
+      } catch {
+        return offlineResponse('', 503);
+      }
+    }
+
+    try {
+      return await fetchAndCache(request, CACHE);
+    } catch {
+      const cached = await caches.match(request);
+      if (cached) return cached;
+      return offlineResponse('', 503);
+    }
+  } catch {
+    return offlineResponse('', 503);
+  }
 }
 
 self.addEventListener('install', e => {
@@ -42,60 +115,5 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-
-  if (isTileRequest(url)) {
-    e.respondWith(
-      caches.open(TILE_CACHE).then(c => c.match(e.request)).then(cached => {
-        const net = fetch(e.request).then(res => {
-          const c = res.clone();
-          if (res.ok) caches.open(TILE_CACHE).then(ca => ca.put(e.request, c));
-          return res;
-        }).catch(() => cached);
-        return cached || net;
-      })
-    );
-    return;
-  }
-
-  if (isApiRequest(url)) {
-    e.respondWith(
-      fetch(e.request).then(res => {
-        const c = res.clone();
-        caches.open(API_CACHE).then(ca => ca.put(e.request, c));
-        return res;
-      }).catch(() => caches.open(API_CACHE).then(c => c.match(e.request)))
-    );
-    return;
-  }
-
-  if (url.hostname.includes('cdn.') || url.hostname.includes('unpkg.com')) {
-    e.respondWith(
-      caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
-        const c = res.clone(); caches.open(CACHE).then(ca => ca.put(e.request, c)); return res;
-      }))
-    );
-    return;
-  }
-
-  if (url.protocol === 'chrome-extension:') return;
-  if (url.origin === self.location.origin && STATIC.some(p => url.pathname === p)) {
-    e.respondWith(
-      caches.match(e.request).then(cached => {
-        const net = fetch(e.request).then(res => {
-          const c = res.clone(); caches.open(CACHE).then(ca => ca.put(e.request, c)); return res;
-        }).catch(() => cached);
-        return cached || net;
-      })
-    );
-    return;
-  }
-
-  e.respondWith(
-    fetch(e.request).then(res => {
-      const c = res.clone();
-      if (res.ok && res.type === 'basic') caches.open(CACHE).then(ca => ca.put(e.request, c));
-      return res;
-    }).catch(() => caches.match(e.request))
-  );
+  e.respondWith(handleRequest(e.request));
 });

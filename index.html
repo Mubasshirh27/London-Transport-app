@@ -27,6 +27,7 @@
       <span id="offline-badge" class="offline-badge" style="display:none">Offline</span>
       <div class="header-right">
         <button id="live-toggle" class="header-btn" title="Live location tracking"><span class="ic" data-ic="gps"></span></button>
+        <button id="simulate-btn" class="header-btn" title="Simulate GPS movement (debug)" style="font-size:9px;padding:4px 6px">▶ Sim</button>
         <button id="refresh-btn" class="header-btn" title="Refresh page"><span class="ic" data-ic="refresh"></span></button>
         <button id="map-toggle-btn" class="header-btn map-btn" title="Open map"><span class="ic" data-ic="map"></span> Map</button>
       </div>
@@ -161,11 +162,13 @@
   <div id="trip-nav-bar" style="display:none">
     <div id="offline-banner" class="offline-banner" style="display:none"><span class="ic" data-ic="wifi_off"></span> No internet connection — trip continues offline</div>
     <div id="trip-nav-header">
-      <button id="trip-nav-toggle"><span class="ic" data-ic="chevron_down"></span></button>
-      <button id="trip-reroute-btn" title="Recalculate route">↻</button>
-      <span id="trip-eta"></span>
-      <span id="trip-progress-text">0%</span>
-      <div id="trip-progress-bar"><div id="trip-progress-fill"></div></div>
+      <div class="tl-drag-handle"></div>
+      <div class="tl-header-row">
+        <button id="trip-nav-toggle"><span class="ic" data-ic="chevron_up"></span></button>
+        <div id="trip-progress-bar"><div id="trip-progress-fill"></div></div>
+        <span id="trip-eta"></span>
+        <button id="trip-reroute-btn" title="Recalculate route">↻</button>
+      </div>
     </div>
     <div id="trip-nav-body">
       <div id="trip-timeline"></div>
@@ -193,12 +196,12 @@
       <button class="layer-btn" data-mode="overground" style="background:#f86c00">Overground</button>
       <button class="layer-btn" data-mode="elizabeth-line" style="background:#6950a0">Elizabeth</button>
     </div>
-    <div id="map-resize-handle"></div>
   </div>
 
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.min.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/config.js"></script>

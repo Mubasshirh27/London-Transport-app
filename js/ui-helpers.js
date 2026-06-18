@@ -20,6 +20,15 @@
 
   UI.showError = function(msg) {
     document.getElementById('results-panel').innerHTML = `<div class="error-msg">⚠️ ${msg}</div>`;
+    const tl = document.getElementById('trip-timeline');
+    const navBar = document.getElementById('trip-nav-bar');
+    if (tl && navBar && navBar.style.display !== 'none') {
+      const note = document.createElement('div');
+      note.className = 'reroute-notification';
+      note.textContent = msg;
+      tl.insertBefore(note, tl.firstChild);
+      setTimeout(() => { if (note.parentNode) note.remove(); }, 5000);
+    }
   };
 
   UI.showRouteLoading = function() {
