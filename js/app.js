@@ -2550,63 +2550,6 @@ function start3DMap() {
       }
     });
 
-    // --- GPS Simulation for testing follow behavior ---
-    (function setupSimulation() {
-      const simBtn = document.getElementById('simulate-btn');
-      if (!simBtn) return;
-      let simTimer = null, simLat = 51.515, simLon = -0.142, simHeading = 90;
-      let simLeg = 0; // 0=east, 1=south, 2=west, 3=north
-      let simStep = 0, simStepsPerLeg = 14;
-      const SIM_STEP_M = 15, SIM_INTERVAL = 2000;
-
-      function advanceSim() {
-        const distDeg = SIM_STEP_M / 111320;
-        const lonScale = 1 / Math.cos(simLat * Math.PI / 180);
-        simLat += distDeg * Math.cos(simHeading * Math.PI / 180);
-        simLon += distDeg * Math.sin(simHeading * Math.PI / 180) * lonScale;
-        simStep++;
-        if (simStep >= simStepsPerLeg) {
-          simStep = 0;
-          simLeg = (simLeg + 1) % 4;
-          simHeading = [90, 180, 270, 0][simLeg];
-        }
-        const accuracy = 10 + Math.random() * 20;
-        MapView.showUserLocation(simLat, simLon, simHeading, accuracy);
-        if (typeof followEnabled !== 'undefined' && followEnabled) {
-          MapView.panTo(simLat, simLon);
-          try {
-            const m = MapView.getMap();
-            if (m && typeof m.setBearing === 'function') {
-              m.setBearing(simHeading, { animate: true, duration: 0.3 });
-            }
-          } catch {}
-        }
-        _lastLat = simLat; _lastLon = simLon;
-        if (tripActiveKey && activeJourneys && activeJourneys[tripActiveKey]) {
-          const fakePos = { coords: { latitude: simLat, longitude: simLon, speed: 1.4, heading: simHeading, accuracy: accuracy } };
-          updateTripProgress(simLat, simLon, fakePos);
-        }
-      }
-
-      simBtn.addEventListener('click', () => {
-        if (simTimer) {
-          clearInterval(simTimer); simTimer = null;
-          simBtn.textContent = '▶ Sim';
-          simBtn.style.background = '';
-          MapView.hideUserLocation();
-          return;
-        }
-        simLat = 51.515; simLon = -0.142;
-        simHeading = 90; simLeg = 0; simStep = 0;
-        MapView.setFollowMode(true);
-        followEnabled = true;
-        simTimer = setInterval(advanceSim, SIM_INTERVAL);
-        simBtn.textContent = '● SIM';
-        simBtn.style.background = '#e32017';
-        advanceSim();
-      });
-    })();
-
     // --- Open departures from map stop click ---
     document.addEventListener('open-departures', (e) => {
       const { id, name, lat, lon, stopLetter } = e.detail;

@@ -1581,8 +1581,6 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 @keyframes live-dot-pulse { 0%,100% { opacity: 1; box-shadow: 0 0 4px var(--green); } 50% { opacity: .4; box-shadow: 0 0 8px var(--green); } }
 #live-toggle { font-size: 11px; font-weight: 700; min-width: 52px; display: flex; align-items: center; justify-content: center; background: var(--accent); color: var(--accent-text); border: none; border-radius: 6px; padding: 4px 10px; cursor: pointer; transition: all .12s; }
 #live-toggle.active { background: #c89666; }
-#simulate-btn.active { background: #e32017; color: white; }
-
 .stop-tooltip { font-size: 10px !important; line-height: 1.4 !important; }
 .bike-tooltip { font-size: 10px !important; line-height: 1.4 !important; }
 
