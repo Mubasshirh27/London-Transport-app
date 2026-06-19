@@ -24,6 +24,8 @@
   function escapeHtml(str) { const d = document.createElement('div'); d.appendChild(document.createTextNode(str)); return d.innerHTML; }
   function escapeAttr(str) { return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 
+  window.addEventListener('unhandledrejection', e => { e.preventDefault(); console.warn('[UH]', e.reason); });
+
   document.addEventListener('DOMContentLoaded', async () => {
     UI.init();
     Icon.init();
@@ -745,7 +747,14 @@
       let mapDragOccurred = false, mapDragOffX = 0, mapDragOffY = 0;
       const isMinimized = () => overlay.classList.contains('popout');
 
+      // Guard to avoid re-entrant/overlapping pop/min toggle operations which
+      // can leave map state (and scheduled invalidateSize calls) inconsistent
       const toggleMapPop = () => {
+        if (window.__toggleMapPopBusy) return;
+        window.__toggleMapPopBusy = true;
+        // allow another toggle after transitions/resize handling complete
+        setTimeout(() => { window.__toggleMapPopBusy = false; }, 400);
+
         const willBeMin = !isMinimized();
         console.debug('toggleMapPop called', { willBeMin, beforeClass: overlay.className, left: overlay.style.left, top: overlay.style.top, width: overlay.style.width, height: overlay.style.height });
         overlay.classList.toggle('popout', willBeMin);
@@ -757,24 +766,34 @@
         overlay.style.width = '';
         overlay.style.height = '';
         console.debug('toggleMapPop after', { popout: overlay.classList.contains('popout'), className: overlay.className, left: overlay.style.left, top: overlay.style.top, width: overlay.style.width, height: overlay.style.height });
+
+        // Cancel any previously scheduled invalidateSize for this operation
+        if (window.__invalidateSizeTimer) { clearTimeout(window.__invalidateSizeTimer); window.__invalidateSizeTimer = null; }
+
         const m = MapView.getMap();
         if (m) {
-          setTimeout(() => {
-            m.invalidateSize({ pan: false });
-            if (activeCenter && !willBeMin) {
-              m.setView(activeCenter, activeZoom || m.getZoom(), { animate: false });
-            }
-            m.invalidateSize({ pan: true });
+          // schedule a single invalidate sequence
+          window.__invalidateSizeTimer = setTimeout(() => {
+            try {
+              m.invalidateSize({ pan: false });
+              if (activeCenter && !willBeMin) {
+                m.setView(activeCenter, activeZoom || m.getZoom(), { animate: false });
+              }
+              m.invalidateSize({ pan: true });
+            } catch (e) { console.warn('invalidateSize failed', e); }
+            window.__invalidateSizeTimer = null;
           }, 50);
         }
         if (map3dInstance) {
-          setTimeout(() => { try { map3dInstance.resize(); } catch(e) {} }, 100);
+          if (window.__map3dResizeTimer) { clearTimeout(window.__map3dResizeTimer); window.__map3dResizeTimer = null; }
+          window.__map3dResizeTimer = setTimeout(() => { try { map3dInstance.resize(); } catch(e) {} }, 100);
         }
       };
 
       if (popBtn) popBtn.onclick = (e) => {
         e.stopPropagation();
         if (mapDragOccurred) { mapDragOccurred = false; return; }
+        if (window.__toggleMapPopBusy) return;
         if (map3dInstance) {
           const cameFromMin = wasMinimizedFor3D;
           if (tripEnd3D) tripEnd3D();
@@ -788,6 +807,7 @@
           if (e.target.closest('#map-pop-btn')) return;
           if (e.target.closest('#map-fullscreen-btn')) return;
           if (mapDragOccurred) { mapDragOccurred = false; return; }
+          if (window.__toggleMapPopBusy) return;
           if (map3dInstance) {
             const cameFromMin = wasMinimizedFor3D;
             if (tripEnd3D) tripEnd3D();
@@ -1157,8 +1177,9 @@
           globalStationIdx++;
         }
         if (colStops.length > 0) {
-          const colId = 'tl-col-stops';
-          const colOpen = !!_walkOpen['_col'];
+          const colId = 'tl-col-stops-' + tripLegIdx;
+          const colKey = '_col_' + tripLegIdx;
+          const colOpen = !!_walkOpen[colKey];
           html += '<div class="tl-col-stops' + (colOpen ? ' open' : '') + '" id="' + colId + '">';
           html += '<div class="tl-col-toggle">';
           html += '<span class="tl-col-arrow">' + (colOpen ? '▼' : '▶') + '</span>';
@@ -1184,7 +1205,7 @@
                 content.style.display = open ? 'none' : 'block';
                 arrow.textContent = open ? '▶' : '▼';
                 el.classList.toggle('open', !open);
-                _walkOpen['_col'] = !open;
+                _walkOpen[colKey] = !open;
               };
             }
           }, 0);
@@ -1822,7 +1843,7 @@
       MapView.addRoute(coords, '#0019a8');
       MapView.addMarker(fromLat, fromLon, 'From: Walking start', '#0019a8');
       MapView.addMarker(lat, lon, 'To: ' + (name || 'Bike'), '#e32017');
-      if (coords.length) MapView.fitBounds([...coords]);
+      try { MapView.fitBounds(coords); } catch (e) { console.warn('fitBounds skipped for bike route', e); }
       let bBtn = document.getElementById('bike-map-close-btn');
       if (!bBtn) {
         bBtn = document.createElement('div'); bBtn.id = 'bike-map-close-btn'; bBtn.innerHTML = '<span class="ic" data-ic="close"></span>';
@@ -1841,7 +1862,7 @@
     }
 
     document.addEventListener('bike-route-to', e => {
-      drawBikeRoute(e.detail.lat, e.detail.lon, e.detail.name);
+      drawBikeRoute(e.detail.lat, e.detail.lon, e.detail.name).catch(() => {});
     });
 
     document.addEventListener('toggle-bikes', async () => {
@@ -1851,7 +1872,6 @@
         MapView.hideBikeMarkers();
         if (window._bikeRouteLayers) { window._bikeRouteLayers.forEach(l => { try { l.remove(); } catch {} }); window._bikeRouteLayers = []; }
         document.getElementById('bike-list').innerHTML = '';
-        bikeLocation = null;
         return;
       }
       // Switch to bikes tab
@@ -1888,76 +1908,6 @@
     });
 
     UI._setupBikeAutocomplete = function() { setupBikeAutocomplete(); };
-
-    // --- Transit Layer Overlay ---
-    window.__transitLayerCache = {};
-    window.__transitLayerRoutes = {};
-
-    function setupTransitLayers() {
-      const toggles = document.getElementById('layer-toggles');
-      if (!toggles) return;
-      toggles.classList.remove('hidden');
-
-      document.querySelectorAll('.layer-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const mode = btn.dataset.mode;
-          const active = btn.classList.toggle('active');
-          if (!active) {
-            const layers = window.__transitLayerRoutes[mode];
-            if (layers) {
-              (layers.leaflet || []).forEach(l => { try { l.remove(); } catch {} });
-              (layers.mlIds || []).forEach(id => { try { if (map3dInstance) map3dInstance.removeLayer(id); } catch {} });
-              (layers.mlIds || []).forEach(id => { try { if (map3dInstance && !id.endsWith('_glow')) map3dInstance.removeSource(id.replace(/_glow$/, '')); } catch {} });
-              delete window.__transitLayerRoutes[mode];
-            }
-            return;
-          }
-          btn.textContent = '...';
-          try {
-            const lines = await Status.fetchAll();
-            const modeLines = (lines || []).filter(l => l.mode === mode);
-            if (!modeLines.length) { btn.textContent = 'None'; setTimeout(() => { btn.textContent = mode.charAt(0).toUpperCase() + mode.slice(1).replace('-', ' '); }, 1500); btn.classList.remove('active'); return; }
-
-            const color = btn.style.background || '#555';
-            const routeLayers = { leaflet: [], mlIds: [] };
-            let fetched = 0;
-            const prevMlCount = window.__ml_lineLayer ? window.__ml_lineLayer.lines.length : 0;
-
-            for (const line of modeLines.slice(0, 20)) {
-              const cacheKey = mode + '_' + line.id;
-              let path = window.__transitLayerCache[cacheKey];
-              if (!path) {
-                try {
-                  const data = await Api.getLineRoutes(line.id, 'inbound');
-                  const coords = Router.extractRoutePath(data);
-                  if (coords.length >= 2) {
-                    path = coords;
-                    window.__transitLayerCache[cacheKey] = coords;
-                  }
-                } catch {}
-              }
-              if (path && path.length >= 2) {
-                const layer = MapView.addRoute(path, color, '', 2, 0.35);
-                if (layer) routeLayers.leaflet.push(layer);
-                fetched++;
-              }
-            }
-
-            // Track the 3D layers added for this mode
-            const newMlCount = window.__ml_lineLayer ? window.__ml_lineLayer.lines.length : 0;
-            for (let i = prevMlCount; i < newMlCount; i++) {
-              routeLayers.mlIds.push(window.__ml_lineLayer.lines[i]);
-            }
-            window.__transitLayerRoutes[mode] = routeLayers;
-            btn.textContent = mode.charAt(0).toUpperCase() + mode.slice(1).replace('-', ' ') + ' (' + fetched + ')';
-          } catch {
-            btn.textContent = 'Error';
-            setTimeout(() => { btn.textContent = mode.charAt(0).toUpperCase() + mode.slice(1).replace('-', ' '); btn.classList.remove('active'); }, 2000);
-          }
-        });
-      });
-    }
-    setupTransitLayers();
 
     function setupBikeAutocomplete() {
       const input = document.getElementById('bike-search-input');
@@ -2047,10 +1997,12 @@
     }
 
     async function promptBikeLocation() {
+      if (window._bikePromptResolve) window._bikePromptResolve({ lat: 51.5, lon: -0.12 });
       const oldClean = window._bikePromptCleanup;
       if (oldClean) oldClean();
 
       return new Promise(resolve => {
+        window._bikePromptResolve = resolve;
         const input = document.getElementById('bike-search-input');
         const suggestionsEl = document.getElementById('bike-search-suggestions');
         const list = document.getElementById('bike-list');
@@ -2669,6 +2621,8 @@ function start3DMap() {
         console.error(err);
         UI.showRouteError('Could not load route. Try again.');
       }
+      const routeTab = document.querySelector('.tab-btn[data-tab="routes"]');
+      if (routeTab) routeTab.click();
     });
 
     // --- Status refresh every 2 min ---

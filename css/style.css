@@ -108,7 +108,7 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 /* ── Main Content ── */
 #main-content { flex: 1; position: relative; display: flex; flex-direction: column; min-height: 0; }
 .tab-content { display: none; flex: 1; min-height: 0; }
-.tab-content.active { display: flex; flex-direction: column; min-height: 0; }
+.tab-content.active { display: flex; flex-direction: column; min-height: 0; padding-bottom: 56px; }
 
 /* ── Journey Tab ── */
 .resume-prompt {
@@ -859,7 +859,8 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 #trip-nav-bar.collapsed { height: 56px !important; min-height: 56px; overflow: hidden; }
 #trip-nav-bar.collapsed #trip-nav-body { display: none; }
 #trip-nav-bar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 8000;
+  /* Keep sheet above device safe area so buttons aren't hidden under rounded corners / home indicator */
+  position: fixed; bottom: calc(0px + var(--safe-b)); left: 0; right: 0; z-index: 8000;
   background: var(--accent); color: var(--accent-text);
   border-radius: 20px 20px 0 0;
   box-shadow: 0 -8px 40px rgba(0,0,0,.45);
@@ -1365,11 +1366,65 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
   padding: 10px 12px 8px;
   border-top: 1px dashed rgba(18,52,59,.12);
   margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
-.tl-footer-leg { display: flex; align-items: center; gap: 8px; }
+.tl-footer-leg { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .tl-footer-icon { font-size: 11px; }
 .tl-footer-name { font-size: 11px; font-weight: 600; color: var(--accent-text); opacity: .8; }
 .tl-footer-time { font-size: 10px; color: var(--accent-text); opacity: .5; margin-left: auto; font-variant-numeric: tabular-nums; background: rgba(18,52,59,.06); padding: 2px 8px; border-radius: 4px; }
+#trip-nav-actions {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent);
+  z-index: 2;
+}
+#trip-nav-actions #trip-recenter-btn {
+  flex-shrink: 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: rgba(18,52,59,.12);
+  color: var(--accent-text);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background .15s;
+}
+#trip-nav-actions #trip-recenter-btn:hover { background: rgba(18,52,59,.2); }
+#trip-nav-actions #trip-recenter-btn .ic { width: 18px; height: 18px; }
+#trip-nav-actions #trip-cancel-btn {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  background: #d32f2f;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-height: 44px;
+  letter-spacing: .3px;
+  transition: opacity .15s, transform .15s;
+  -webkit-tap-highlight-color: transparent;
+  text-align: center;
+}
+#trip-nav-actions #trip-cancel-btn:hover { opacity: .9; }
+#trip-nav-actions #trip-cancel-btn:active { transform: scale(.97); opacity: .8; }
+#trip-nav-bar.collapsed { height: auto !important; min-height: unset; max-height: none; overflow: visible; transition: none !important; }
+#trip-nav-bar.collapsed #trip-nav-body { display: none !important; }
+#trip-nav-bar.collapsed #trip-nav-header { border-bottom: none; }
 
 /* Bottom info bar - always visible */
 #trip-current-info {
@@ -1392,16 +1447,12 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
 .tci-platform { font-weight: 700; background: rgba(18,52,59,.08); padding: 1px 5px; border-radius: 4px; font-family: monospace; font-size: 9px; }
 .tci-countdown { margin-left: auto; font-weight: 700; font-size: 11px; }
 
-#trip-recenter-btn {
-  margin-top: 6px; padding: 5px 12px; font-size: 10px;
-  background: var(--accent-text); color: var(--accent);
-  border: none; border-radius: 6px; cursor: pointer; font-weight: 600; white-space: nowrap; flex-shrink: 0;
-  transition: all .15s;
-}
 .trip-start-btn, .trip-end-btn {
-  padding: 8px 18px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700;
-  font-size: 13px; white-space: nowrap; flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0,0,0,.2); transition: all .15s;
+  /* reduce visual weight of trip action buttons so they don't dominate the card
+     keep them touch-friendly but smaller and more harmonious with the card layout */
+  padding: 6px 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: 700;
+  font-size: 13px; white-space: nowrap; flex-shrink: 0; min-height: 36px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.18); transition: all .12s;
 }
 .trip-start-btn:hover, .trip-end-btn:hover { filter: brightness(1.15); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,0,0,.25); }
 .trip-start-btn:active, .trip-end-btn:active { transform: translateY(0); }
@@ -1648,7 +1699,8 @@ body.mode-3d .user-location-marker .user-loc-inner { animation: marker-breathe 1
   #trip-nav-body { padding: 0 8px 8px; }
   .tl-header-row { padding: 2px 8px 4px; }
   #trip-recenter-btn { padding: 8px 14px; font-size: 12px; min-height: 36px; }
-  .trip-start-btn, .trip-end-btn { font-size: 14px; padding: 10px 20px; min-height: 44px; border-radius: 10px; }
+  /* Slightly smaller on small/medium screens to avoid overly large buttons */
+  .trip-start-btn, .trip-end-btn { font-size: 13px; padding: 8px 14px; min-height: 40px; border-radius: 8px; }
   #map-legend { bottom: calc(80px + var(--safe-b)); font-size: 9px; padding: 4px 10px; gap: 8px; flex-wrap: wrap; justify-content: center; }
   .map-overlay-btn { padding: 10px 14px; font-size: 14px; min-height: var(--touch-min); }
   #close-map-btn { right: calc(14px + var(--safe-r)); font-size: 18px; min-height: var(--touch-min); min-width: var(--touch-min); }

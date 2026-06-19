@@ -1,5 +1,6 @@
 (function() {
   const UI = window.UI = window.UI || {};
+  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
   let departuresTimer2 = null;
 
   UI.showDepartures = function(stopId, stopName, stopLetter) {
@@ -11,8 +12,8 @@
     panel.dataset.stopLetter = stopLetter || '';
     delete panel.dataset.dirFilter;
     const list = document.getElementById('departures-list');
-    const letterHtml = stopLetter ? '<span class="stop-letter">' + stopLetter + '</span>' : '';
-    panel.querySelector('h3').innerHTML = '\u{1F68F} ' + stopName + ' ' + letterHtml + ' <span class="live-badge">LIVE</span>';
+    const letterHtml = stopLetter ? '<span class="stop-letter">' + esc(stopLetter) + '</span>' : '';
+    panel.querySelector('h3').innerHTML = '\u{1F68F} ' + esc(stopName) + ' ' + letterHtml + ' <span class="live-badge">LIVE</span>';
     Stops.getStopAccessibility(stopId).then(acc => {
       if (acc && acc.stepFree) {
         const h3 = panel.querySelector('h3');
@@ -26,9 +27,9 @@
         }
       }
     }).catch(() => {});
-    loadArrivals(stopId, list);
+    loadArrivals(stopId, list).catch(() => {});
     departuresTimer2 = setInterval(async () => {
-      if (panel.style.display !== 'none') await loadArrivals(stopId, list, true);
+      if (panel.style.display !== 'none') await loadArrivals(stopId, list, true).catch(() => {});
     }, 30000);
     panel.querySelector('.panel-close').onclick = () => {
       panel.style.display = 'none';
@@ -61,7 +62,7 @@
         html += '<div class="dir-filter-bar" id="dir-filter-bar">'
           + '<button class="dir-filter-btn active" data-dir="">All</button>';
         allDirections.forEach(d => {
-          html += '<button class="dir-filter-btn" data-dir="' + d.replace(/"/g, '&quot;') + '">' + d + '</button>';
+          html += '<button class="dir-filter-btn" data-dir="' + esc(d) + '">' + esc(d) + '</button>';
         });
         html += '</div>';
       }
@@ -69,7 +70,7 @@
       // Route tags
       if (allRoutes.length > 1) {
         html += '<div class="route-tags"><span class="route-tags-label">Routes:</span>'
-          + allRoutes.map(r => '<button class="route-tag" data-route="' + r.replace(/"/g, '&quot;') + '">' + r + '</button>').join('')
+          + allRoutes.map(r => '<button class="route-tag" data-route="' + esc(r) + '">' + esc(r) + '</button>').join('')
           + '</div>';
       }
 
@@ -83,29 +84,31 @@
           + '</div>';
         g.lines.forEach(([lineName, lineArrivals, dir, plat]) => {
           const bg = Stops.getModeColor(g.mode);
-          const dirLabel = dir ? ' <span class="dir-badge">' + dir + '</span>' : '';
+          const eLineName = esc(lineName), eDir = esc(dir || ''), ePlat = esc(plat || '');
+          const dirLabel = dir ? ' <span class="dir-badge">' + eDir + '</span>' : '';
           const boundRe = /^(Westbound|Eastbound|Northbound|Southbound|Inner Rail|Outer Rail)/i;
           const platClean = plat ? plat.replace(boundRe, '').replace(/^\s*[-:]\s*/, '').trim() : '';
-          const platLabel = platClean ? (dir ? ' \u00b7 Plat. ' + platClean : ' \u00b7 ' + plat) : '';
-          html += '<div class="line-group" data-dir="' + (dir || '') + '">'
+          const ePlatClean = esc(platClean);
+          const platLabel = platClean ? (dir ? ' \u00b7 Plat. ' + ePlatClean : ' \u00b7 ' + ePlat) : '';
+          html += '<div class="line-group" data-dir="' + eDir + '">'
             + '<div class="line-header" style="background:' + bg + ';color:#fff">'
-            + '<span class="line-badge" style="background:rgba(0,0,0,.3)">' + lineName + '</span>'
+            + '<span class="line-badge" style="background:rgba(0,0,0,.3)">' + eLineName + '</span>'
             + dirLabel + platLabel
             + '<span class="line-count">' + lineArrivals.length + ' services</span>'
-            + '<button class="full-day-btn" data-stop="' + stopId + '" data-line="' + lineName.replace(/"/g, '&quot;') + '"' + (dir ? ' data-dir="' + dir.replace(/"/g, '&quot;') + '"' : '') + '>Full Day</button>'
+            + '<button class="full-day-btn" data-stop="' + esc(stopId) + '" data-line="' + eLineName + '"' + (dir ? ' data-dir="' + eDir + '"' : '') + '>Full Day</button>'
             + '</div>';
           lineArrivals.forEach(a => {
             const mins = a.timeToStation;
             const cls = mins <= 1 ? 'due' : mins <= 5 ? 'soon' : '';
             const aPlat = a.platformName || '';
-            const platDisplay = aPlat ? 'Plat. ' + aPlat.replace(boundRe, '').replace(/^\s*[-:]\s*/, '').trim() : '';
+            const platDisplay = aPlat ? 'Plat. ' + esc(aPlat.replace(boundRe, '').replace(/^\s*[-:]\s*/, '').trim()) : '';
             const platClean = aPlat.replace(boundRe, '').replace(/^\s*[-:]\s*/, '').replace(/^(Platform|Plat\.?|Bus Stop|Stop)\s*/i, '').trim();
-            const platBadge = platClean && platClean.length <= 6 ? '<span class="plat-badge">' + platClean + '</span>' : '';
-            const dirTag = a.dirLabel ? ' <span class="arr-dir">' + a.dirLabel + '</span>' : '';
+            const platBadge = platClean && platClean.length <= 6 ? '<span class="plat-badge">' + esc(platClean) + '</span>' : '';
+            const dirTag = a.dirLabel ? ' <span class="arr-dir">' + esc(a.dirLabel) + '</span>' : '';
             const dueText = mins <= 0 ? '<span class="arr-due">Due</span>' : mins === 1 ? '<span class="arr-min">1 min</span>' : '<span class="arr-min">' + mins + ' min</span>';
             const schedTag = a._scheduled ? ' <span class="sched-mini">SCHED</span>' : '';
             html += '<div class="line-arrival ' + cls + '">'
-              + '<span class="arr-dest">' + platBadge + (a.destination || '') + dirTag + '</span>'
+              + '<span class="arr-dest">' + platBadge + esc(a.destination || '') + dirTag + '</span>'
               + '<span class="arr-plat">' + platDisplay + schedTag + '</span>'
               + '<span class="arr-time">' + dueText + '</span>'
               + '</div>';

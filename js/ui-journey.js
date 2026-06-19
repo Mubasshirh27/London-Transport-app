@@ -430,8 +430,8 @@
 
     const startBtn = document.getElementById('trip-start-btn');
     const endBtn = document.getElementById('trip-end-btn');
-    startBtn.style.display = 'inline-block';
-    endBtn.style.display = 'none';
+    if (startBtn) startBtn.style.display = 'inline-block';
+    if (endBtn) endBtn.style.display = 'none';
 
     const resultsCloseBtn = document.getElementById('results-close-btn');
     if (resultsCloseBtn) resultsCloseBtn.onclick = () => { resultsPanel.innerHTML = '<div class="panel-placeholder">Enter a destination and plan your journey</div>'; };

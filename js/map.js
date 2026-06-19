@@ -6,6 +6,8 @@ const MapView = (() => {
   let markerData = [], routeData = [], stopMarkerData = [], bikeMarkerData = [], routeStopMarkerData = [], userLocData = null;
   let userAccuracyCircle = null;
 
+  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
+
   let tileLayer = null, tileProviderIdx = 0, tileFailCount = 0, tileFailTimer = null;
   let swControlled = false;
 
@@ -152,15 +154,27 @@ const MapView = (() => {
 
   function fitBounds(pointsList) {
     if (!pointsList || !pointsList.length) return;
-    const all = pointsList.flat();
-    if (all.length < 2) return;
-    map.fitBounds(all, { padding: [50, 50] });
-    if (mlMap && mlMap.isStyleLoaded()) {
-      const lats = all.map(p => p[0]), lons = all.map(p => p[1]);
-      const sw = [Math.min(...lons), Math.min(...lats)];
-      const ne = [Math.max(...lons), Math.max(...lats)];
-      mlMap.fitBounds([sw, ne], { padding: 50, duration: 600 });
-    }
+    // Support both: fitBounds([[lat,lon], [lat,lon]]) and fitBounds([[[lat,lon], [lat,lon]]])
+    let pts = pointsList;
+    // If pointsList is [[array]] or similar, unwrap once
+    if (Array.isArray(pointsList[0]) && pointsList.length === 1) pts = pointsList[0];
+    const valid = pts.filter(Array.isArray).filter(p => p.length >= 2 && typeof p[0] === 'number' && typeof p[1] === 'number' && !isNaN(p[0]) && !isNaN(p[1]));
+    if (valid.length < 2) return;
+    // Avoid zero-area bounds (single point or identical points)
+    const lats = valid.map(p => p[0]), lons = valid.map(p => p[1]);
+    const latMin = Math.min(...lats), latMax = Math.max(...lats);
+    const lonMin = Math.min(...lons), lonMax = Math.max(...lons);
+    if (latMin === latMax && lonMin === lonMax) return;
+    try {
+      map.fitBounds(valid, { padding: [50, 50] });
+    } catch (e) { console.warn('fitBounds 2D error', e); }
+    try {
+      if (mlMap && mlMap.isStyleLoaded()) {
+        const sw = [lonMin, latMin];
+        const ne = [lonMax, latMax];
+        mlMap.fitBounds([sw, ne], { padding: 50, duration: 600 });
+      }
+    } catch (e) { console.warn('fitBounds 3D error', e); }
   }
 
   function clearRoutes() {
@@ -212,12 +226,14 @@ const MapView = (() => {
 
   function showStopLivePopup(stopId, stopName, lat, lon, opts = {}) {
     if (lat == null || lon == null || isNaN(lat) || isNaN(lon)) return;
+    stopName = esc(stopName);
+    stopId = esc(stopId);
     const modeStr = opts.modeStr || '';
     const distance = opts.distance != null ? `<span style="font-size:10px;color:#888">(${Math.round(opts.distance)}m)</span>` : '';
-    const routeTags = opts.routeTags ? opts.routeTags.slice(0, 8).map(r => `<span class="popup-route-tag">${r}</span>`).join('') : '';
+    const routeTags = opts.routeTags ? opts.routeTags.slice(0, 8).map(r => `<span class="popup-route-tag">${esc(r)}</span>`).join('') : '';
     const extraLine = opts.extraLine || '';
     const stopLetter = opts.stopLetter || '';
-    const stopLetterHtml = stopLetter ? `<span class="stop-letter">${stopLetter}</span>` : '';
+    const stopLetterHtml = stopLetter ? `<span class="stop-letter">${esc(stopLetter)}</span>` : '';
     const is3d = mlMap && document.getElementById('map-3d')?.style.display !== 'none';
     let popup = null, mlPopup = null;
     if (!is3d) {
@@ -291,14 +307,15 @@ const MapView = (() => {
       const icon = L.divIcon({ className: 'stop-marker', html, iconSize: [14,14], iconAnchor: [7,7] });
       const m = L.marker([s.lat, s.lon], { icon }).addTo(map);
       const modeStr = s.modes.map(mo => modeIcons[mo] || '').filter(Boolean).join('');
+      const sName = esc(s.name), sId = esc(s.id);
       const routeStr = s.lines && s.lines.length ? `${s.lines.slice(0,5).join(', ')}${s.lines.length>5?'...':''}` : '';
-      m.bindTooltip(`<strong>${s.name}</strong> <span class="stop-code">${s.id}</span><br>${modeStr} ${routeStr ? '· '+routeStr : ''}`, { direction:'top', className:'stop-tooltip' });
+      m.bindTooltip(`<strong>${sName}</strong> <span class="stop-code">${sId}</span><br>${modeStr} ${routeStr ? '· '+routeStr : ''}`, { direction:'top', className:'stop-tooltip' });
       const popupEl = document.createElement('div');
-      popupEl.innerHTML = `<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${s.name}</strong> <span class="stop-code">${s.id}</span></div><div class="stop-popup-loading"><div class="spinner"></div><span>Loading departures...</span></div></div>`;
+      popupEl.innerHTML = `<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${sName}</strong> <span class="stop-code">${sId}</span></div><div class="stop-popup-loading"><div class="spinner"></div><span>Loading departures...</span></div></div>`;
       const popContent = popupEl.firstElementChild;
       (async () => {
         const accData = await Stops.getStopAccessibility(s.id).catch(() => null);
-        const accBadge = accData && accData.stepFree ? ` <span class="acc-badge" title="${(accData.text || 'Step-free access')}">\u267F</span>` : '';
+        const accBadge = accData && accData.stepFree ? ` <span class="acc-badge" title="${esc(accData.text || 'Step-free access')}">\u267F</span>` : '';
         try {
           const arr = await Stops.getArrivals(s.id);
           if (arr.length) {
@@ -307,22 +324,23 @@ const MapView = (() => {
             grp.forEach(g => {
               if (!g.lines.length) return;
               g.lines.forEach(([ln, la, dir, plat]) => {
+                const lnEsc = esc(ln), dirEsc = esc(dir), platEsc = esc(plat);
                 la.slice(0,4).forEach((a,i) => {
                   if (i===0) {
-                    let lb = `${modeIcons[g.mode]||''} ${g.mode} · ${ln}`;
-                    if (dir) lb += ` <span style="font-weight:400;font-size:10px">${dir}</span>`;
-                    if (plat && !plat.match(/^West|East|North|South/i)) lb += ` <span style="font-weight:400;font-size:10px">Stop ${plat}</span>`;
+                    let lb = `${modeIcons[g.mode]||''} ${g.mode} · ${lnEsc}`;
+                    if (dir) lb += ` <span style="font-weight:400;font-size:10px">${dirEsc}</span>`;
+                    if (plat && !plat.match(/^West|East|North|South/i)) lb += ` <span style="font-weight:400;font-size:10px">Stop ${platEsc}</span>`;
                     h += `<div class="popup-mode-group"><span class="popup-mode-label">${lb}</span></div>`;
                   }
                   const dt = a.timeToStation <= 0 ? 'Due' : a.timeToStation === 1 ? '1 min' : `${a.timeToStation} min`;
                   const bgc = modeColors[g.mode] || '#333';
-                  h += `<div class="popup-arrival"><span class="popup-line-badge" style="background:${bgc}">${ln}</span><span class="popup-dest">${a.destination || ''}</span><span class="popup-time">${dt}</span></div>`;
+                  h += `<div class="popup-arrival"><span class="popup-line-badge" style="background:${bgc}">${lnEsc}</span><span class="popup-dest">${esc(a.destination || '')}</span><span class="popup-time">${dt}</span></div>`;
                 });
               });
             });
             if (arr.length > 8) h += `<div style="font-size:9px;color:#888;padding:2px 0">+${arr.length-8} more</div>`;
-            h += `<button class="stop-popup-btn" style="margin-top:6px" data-sid="${s.id}" data-sname="${s.name}" data-slat="${s.lat}" data-slon="${s.lon}">📋 View Full Timetable</button>`;
-            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong>${accBadge} <span class="stop-code">${s.id}</span></div><div class="popup-departures-list">${h}</div>`;
+            h += `<button class="stop-popup-btn" style="margin-top:6px" data-sid="${sId}" data-sname="${sName}" data-slat="${s.lat}" data-slon="${s.lon}">📋 View Full Timetable</button>`;
+            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${sName}</strong>${accBadge} <span class="stop-code">${sId}</span></div><div class="popup-departures-list">${h}</div>`;
             popContent.querySelector('.stop-popup-btn')?.addEventListener('click', (e) => {
               const b = e.currentTarget;
               map.closePopup();
@@ -362,13 +380,14 @@ const MapView = (() => {
       const pct = b.docks > 0 ? (b.bikes / b.docks) * 100 : 0;
       const color = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
       const html = `<div style="background:${color};width:22px;height:22px;border-radius:50%;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer">🚲</div>`;
+      const bName = esc(b.name);
       const icon = L.divIcon({ className:'bike-marker', html, iconSize:[26,26], iconAnchor:[13,13] });
       const m = L.marker([b.lat, b.lon], { icon }).addTo(map);
-      m.bindTooltip(`${b.name}<br>🚲 ${b.bikes} · 🅿️ ${b.spaces}`, { direction:'top', className:'bike-tooltip' });
+      m.bindTooltip(`${bName}<br>🚲 ${b.bikes} · 🅿️ ${b.spaces}`, { direction:'top', className:'bike-tooltip' });
       const popContent = document.createElement('div');
       popContent.style.width = '200px';
       popContent.innerHTML = `
-        <div style="font-size:13px;font-weight:700;margin-bottom:4px">🚲 ${b.name}</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">🚲 ${bName}</div>
         <div style="font-size:11px;line-height:1.5">
           <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Available bikes</span><strong>${b.bikes}</strong></div>
           <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Empty docks</span><strong>${b.spaces}</strong></div>
@@ -564,6 +583,7 @@ const MapView = (() => {
       try {
         const pct = b.docks > 0 ? (b.bikes / b.docks) * 100 : 0;
         const color = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
+        const bName = esc(b.name), bId = esc(b.id.replace('BikePoints_', ''));
         const el = document.createElement('div');
         el.style.cssText = `background:${color};width:22px;height:22px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;position:absolute;z-index:99999`;
         el.textContent = '🚲';
@@ -574,7 +594,7 @@ const MapView = (() => {
             const popup = new maplibregl.Popup({ className: 'stop-detail-popup', closeButton: true, maxWidth: '240px' });
             popup.setLngLat([b.lon, b.lat]);
             popup.setHTML(`
-              <div style="font-size:13px;font-weight:700;margin-bottom:4px">🚲 ${b.name} <span class="stop-code">${b.id.replace('BikePoints_', '')}</span></div>
+              <div style="font-size:13px;font-weight:700;margin-bottom:4px">🚲 ${bName} <span class="stop-code">${bId}</span></div>
               <div style="font-size:11px;line-height:1.5">
                 <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Available bikes</span><strong>${b.bikes}</strong></div>
                 <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Empty docks</span><strong>${b.spaces}</strong></div>

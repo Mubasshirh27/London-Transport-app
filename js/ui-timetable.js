@@ -1,5 +1,6 @@
 (function() {
   const UI = window.UI = window.UI || {};
+  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
 
   function getDateSchedule(schedules, date) {
     const day = date.getDay(); // 0=Sun, 6=Sat
@@ -392,7 +393,7 @@
     const ls = _ttCache && _ttCache.lineStops;
     const dn = _ttCache && _ttCache.displayName;
     const mapBarHtml = ls && Array.isArray(ls) && ls.length > 2
-      ? '<div class="tt-map-bar"><span class="tt-map-bar-text">\u{1F4CD} ' + (dn || lineId) + ' (' + ls.length + ' stops)</span><button class="tt-map-btn" data-stop="' + stopId + '" data-line="' + lineId + '">\u{1F5FA}\ufe0f Show on map</button></div>'
+      ? '<div class="tt-map-bar"><span class="tt-map-bar-text">\u{1F4CD} ' + esc(dn || lineId) + ' (' + ls.length + ' stops)</span><button class="tt-map-btn" data-stop="' + esc(stopId) + '" data-line="' + esc(lineId) + '">\u{1F5FA}\ufe0f Show on map</button></div>'
       : '';
 
     let html = dateBarHtml +
@@ -422,12 +423,13 @@
     let arrivals = [];
     try { arrivals = await Stops.getArrivals(stopId); } catch (e) { console.log('[Timetable] Arrivals error:', e); }
     const displayName = arrivals.length ? (arrivals.find(a => a.lineId === lineId || a.line === lineId)?.line || lineId) : lineId;
-    const headerSuffix = directionFilter ? ' (' + directionFilter + ')' : '';
+    const eLineId = esc(lineId), eDisplayName = esc(displayName), eStopName = esc(stopName), eStopId = esc(stopId);
+    const headerSuffix = directionFilter ? ' (' + esc(directionFilter) + ')' : '';
     const isLineSaved = typeof Store !== 'undefined' && Store.isLineSaved(lineId);
     const saveBtn = isLineSaved
-      ? '<button class="line-save-btn saved" data-line="' + lineId + '" data-name="' + displayName + '" data-mode="' + (arrivals.length ? arrivals[0]?.mode || 'tube' : 'tube') + '" title="Remove from My Lines">\u2605</button>'
-      : '<button class="line-save-btn" data-line="' + lineId + '" data-name="' + displayName + '" data-mode="' + (arrivals.length ? arrivals[0]?.mode || 'tube' : 'tube') + '" title="Save to My Lines">\u2606</button>';
-    panel.querySelector('h3').innerHTML = saveBtn + ' 📋 ' + displayName + headerSuffix + ' Timetable \u00b7 ' + stopName + ' <span class="stop-code">' + stopId + '</span>';
+      ? '<button class="line-save-btn saved" data-line="' + eLineId + '" data-name="' + eDisplayName + '" data-mode="' + esc(arrivals.length ? arrivals[0]?.mode || 'tube' : 'tube') + '" title="Remove from My Lines">\u2605</button>'
+      : '<button class="line-save-btn" data-line="' + eLineId + '" data-name="' + eDisplayName + '" data-mode="' + esc(arrivals.length ? arrivals[0]?.mode || 'tube' : 'tube') + '" title="Save to My Lines">\u2606</button>';
+    panel.querySelector('h3').innerHTML = saveBtn + ' 📋 ' + eDisplayName + headerSuffix + ' Timetable \u00b7 ' + eStopName + ' <span class="stop-code">' + eStopId + '</span>';
 
     const resolvedStopIds = await Stops.resolveStopIds(stopId).catch(() => [stopId]);
     console.log('[Timetable] Resolved stop IDs:', resolvedStopIds);
@@ -468,7 +470,7 @@
     panel.dataset.stopId = stopId;
     const list = document.getElementById('departures-list');
     list.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
-    panel.querySelector('h3').innerHTML = '📋 ' + stopName + ' Timetable <span class="stop-code">' + stopId + '</span>';
+    panel.querySelector('h3').innerHTML = '📋 ' + esc(stopName) + ' Timetable <span class="stop-code">' + esc(stopId) + '</span>';
     let routes = [], liveArrivals = [], routeModeMap = {};
     try {
       liveArrivals = await Stops.getArrivals(stopId);
@@ -509,9 +511,9 @@
       const color = Stops.getModeColor(mode);
       const nextDue = routeLive.length ? routeLive[0].timeToStation : null;
       const nextText = nextDue !== null ? (nextDue <= 0 ? 'Due' : nextDue + ' min') : '';
-      html += '<button class="tt-route-btn" data-stop="' + stopId + '" data-line="' + r + '" style="border-left-color:' + color + '">' +
+      html += '<button class="tt-route-btn" data-stop="' + esc(stopId) + '" data-line="' + esc(r) + '" style="border-left-color:' + color + '">' +
         '<span class="tt-route-icon">' + Stops.getModeIcon(mode) + '</span>' +
-        '<span class="tt-route-num" style="background:' + color + '">' + r + '</span>' +
+        '<span class="tt-route-num" style="background:' + color + '">' + esc(r) + '</span>' +
         '<span class="tt-route-next">' + nextText + '</span>' +
         '<span class="tt-route-arrow">\u2192</span></button>';
     });

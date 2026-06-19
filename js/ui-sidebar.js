@@ -1,5 +1,6 @@
 (function() {
   const UI = window.UI = window.UI || {};
+  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
 
   let statusLines = [];
   let mapOpen = false;
@@ -151,6 +152,11 @@
   }
 
   function toggleMap() {
+    // Prevent rapid repeated toggles which can leave overlay/map in an inconsistent state
+    if (window.__mapToggleBusy) return;
+    window.__mapToggleBusy = true;
+    setTimeout(() => { window.__mapToggleBusy = false; }, 350);
+
     const overlay = document.getElementById('map-overlay');
     if (overlay.dataset.tripFs) return;
     if (overlay.classList.contains('floating')) {
@@ -252,12 +258,13 @@
       const statusText = line ? (line.statusText || (line.statusCls === 'good' ? 'Good Service' : line.reason || 'Check status')) : 'Checking...';
       const color = line && line.color ? line.color : '#888';
       const isNR = sl.mode === 'national-rail';
-      html += '<div class="my-lines-item" data-line="' + sl.id + '">'
+      const eSlId = esc(sl.id), eSlName = esc(sl.name), eStatus = esc(statusText || '');
+      html += '<div class="my-lines-item" data-line="' + eSlId + '">'
         + '<span class="my-lines-dot" style="background:' + color + '"></span>'
-        + '<span class="my-lines-name">' + sl.name + '</span>'
-        + '<span class="my-lines-status ' + cls + '">' + statusText + '</span>'
+        + '<span class="my-lines-name">' + eSlName + '</span>'
+        + '<span class="my-lines-status ' + cls + '">' + eStatus + '</span>'
         + (isNR ? '<span class="my-lines-note">(arrivals only)</span>' : '')
-        + '<button class="my-lines-remove" data-line="' + sl.id + '" title="Remove line">\u2716</button>'
+        + '<button class="my-lines-remove" data-line="' + eSlId + '" title="Remove line">\u2716</button>'
         + '</div>';
     });
     list.innerHTML = html;

@@ -1,17 +1,9 @@
 const Api = (() => {
   const BASE = CONFIG.tflApiBase;
   const KEY = CONFIG.tflApiKey;
-  let rateLimitQueue = Promise.resolve();
-  let rateLimitCount = 0;
+  let rateLimitPromise = Promise.resolve();
 
-  function rateLimited(fn) {
-    if (rateLimitCount > 100) { rateLimitQueue = Promise.resolve(); rateLimitCount = 0; }
-    rateLimitCount++;
-    rateLimitQueue = rateLimitQueue.then(() => fn()).then(r => new Promise(resolve => setTimeout(() => resolve(r), 200)));
-    return rateLimitQueue;
-  }
-
-  async function fetchTfl(endpoint, params = {}) {
+  async function _rawTfl(endpoint, params = {}) {
     params.app_key = KEY;
     const qs = Object.entries(params)
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
@@ -34,7 +26,17 @@ const Api = (() => {
       console.error(`TfL API ${res.status} for ${url.replace(/app_key=[^&]+/, 'app_key=REDACTED')}`, body);
       throw new Error(`TfL API error: ${res.status}`);
     }
-    return res.json();
+    const text = await res.text();
+    try { return JSON.parse(text); } catch { return { body: text }; }
+  }
+
+  function fetchTfl(endpoint, params = {}) {
+    const p = rateLimitPromise.then(async () => await _rawTfl(endpoint, params));
+    rateLimitPromise = p.then(
+      () => new Promise(r => setTimeout(r, 200)),
+      () => new Promise(r => setTimeout(r, 200))
+    );
+    return p;
   }
 
   function parseCoord(input) {
@@ -62,7 +64,7 @@ const Api = (() => {
   }
 
   async function getStopArrivals(stopId) {
-    return rateLimited(() => fetchTfl(`/StopPoint/${encodeURIComponent(stopId)}/Arrivals`));
+    return fetchTfl(`/StopPoint/${encodeURIComponent(stopId)}/Arrivals`);
   }
 
   async function getNearbyStops(lat, lon, radius) {
@@ -103,8 +105,11 @@ const Api = (() => {
       { url: `https://router.project-osrm.org/route/v1/walking/${fromLon},${fromLat};${toLon},${toLat}?geometries=geojson&overview=full&steps=true` }
     ];
     for (const s of servers) {
+      const ctl = new AbortController();
+      const tid = setTimeout(() => ctl.abort(), 10000);
       try {
-        const res = await fetch(s.url);
+        const res = await fetch(s.url, { signal: ctl.signal });
+        clearTimeout(tid);
         if (!res.ok) continue;
         const data = await res.json();
         if (data && data.code === 'Ok' && data.routes && data.routes[0]) {
@@ -125,7 +130,7 @@ const Api = (() => {
             }))
           };
         }
-      } catch {}
+      } catch { clearTimeout(tid); }
     }
     return null;
   }
@@ -144,7 +149,7 @@ const Api = (() => {
   }
 
   async function getStopProperties(stopId) {
-    return rateLimited(() => fetchTfl(`/StopPoint/${encodeURIComponent(stopId)}`));
+    return fetchTfl(`/StopPoint/${encodeURIComponent(stopId)}`);
   }
 
   async function getMetaModes() {
@@ -159,22 +164,28 @@ const Api = (() => {
   }
 
   async function geocodePostcode(postcode) {
+    const ctl = new AbortController();
+    const tid = setTimeout(() => ctl.abort(), 10000);
     try {
-      const res = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(postcode.trim())}`);
+      const res = await fetch(`https://api.postcodes.io/postcodes/${encodeURIComponent(postcode.trim())}`, { signal: ctl.signal });
+      clearTimeout(tid);
       if (!res.ok) return null;
       const data = await res.json();
       if (data && data.result) return { lat: data.result.latitude, lon: data.result.longitude, label: data.result.postcode };
-    } catch {}
+    } catch { clearTimeout(tid); }
     return null;
   }
 
   async function searchPostcodes(query) {
+    const ctl = new AbortController();
+    const tid = setTimeout(() => ctl.abort(), 10000);
     try {
-      const res = await fetch(`https://api.postcodes.io/postcodes?q=${encodeURIComponent(query.trim())}&limit=5`);
+      const res = await fetch(`https://api.postcodes.io/postcodes?q=${encodeURIComponent(query.trim())}&limit=5`, { signal: ctl.signal });
+      clearTimeout(tid);
       if (!res.ok) return [];
       const data = await res.json();
       if (data && Array.isArray(data.result)) return data.result.map(r => ({ label: r.postcode, lat: r.latitude, lon: r.longitude }));
-    } catch {}
+    } catch { clearTimeout(tid); }
     return [];
   }
 

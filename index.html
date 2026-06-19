@@ -170,9 +170,12 @@
         <button id="trip-reroute-btn" title="Recalculate route">↻</button>
       </div>
     </div>
+    <div id="trip-nav-actions">
+      <button id="trip-recenter-btn" style="display:none"><span class="ic" data-ic="gps_fixed"></span> Follow</button>
+      <button id="trip-cancel-btn" onclick="document.dispatchEvent(new Event('end-trip'))">✕ End Trip</button>
+    </div>
     <div id="trip-nav-body">
       <div id="trip-timeline"></div>
-      <button id="trip-recenter-btn" style="display:none"><span class="ic" data-ic="gps"></span></button>
     </div>
   </div>
 
@@ -188,14 +191,7 @@
     <button id="view-3d-btn" class="map-overlay-btn view-3d" title="Toggle 3D view"><span class="ic" data-ic="map"></span> 3D</button>
     <div id="map-click-info" class="hidden">Click on map to set <strong id="click-target-label">from</strong> location</div>
     <div id="map-resize-handle"></div>
-    <div id="layer-toggles" class="hidden">
-      <span class="layer-toggle-label">Layers:</span>
-      <button class="layer-btn" data-mode="tube" style="background:#0019a8">Tube</button>
-      <button class="layer-btn" data-mode="bus" style="background:#e32017">Bus</button>
-      <button class="layer-btn" data-mode="dlr" style="background:#00a94f">DLR</button>
-      <button class="layer-btn" data-mode="overground" style="background:#f86c00">Overground</button>
-      <button class="layer-btn" data-mode="elizabeth-line" style="background:#6950a0">Elizabeth</button>
-    </div>
+
   </div>
 
 </div>

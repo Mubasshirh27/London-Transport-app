@@ -1,5 +1,6 @@
 (function() {
   const UI = window.UI = window.UI || {};
+  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
   UI.showRouteStopList = function(stops, routeName, routeId, mode, fromTerminus, toTerminus) {
     const el = document.getElementById('route-results');
     if (!stops || !stops.length) {
@@ -22,12 +23,13 @@
       + (terminiStr ? '<div class="route-termini" style="color:' + modeColor + '">' + modeIcon + ' ' + modeName + ' \u00b7 ' + terminiStr + '</div>' : '')
       + '<div class="route-stop-list">'
       + stops.map((s, i) => {
-        const stopCodeHtml = (s.stopId || s.id) ? '<span class="stop-code">' + (s.stopId || s.id) + '</span>' : '';
-        const stopLetterHtml = s.stopLetter ? '<span class="stop-letter">' + s.stopLetter + '</span>' : '';
-        return '<div class="route-stop-item" data-stop-id="' + (s.stopId || s.id) + '" data-lat="' + s.lat + '" data-lon="' + s.lon + '" data-stop-name="' + s.name + '" data-stop-letter="' + (s.stopLetter || '') + '">'
+        const sName = esc(s.name), sId = esc(s.stopId || s.id), sLetter = esc(s.stopLetter || '');
+        const stopCodeHtml = (s.stopId || s.id) ? '<span class="stop-code">' + sId + '</span>' : '';
+        const stopLetterHtml = s.stopLetter ? '<span class="stop-letter">' + sLetter + '</span>' : '';
+        return '<div class="route-stop-item" data-stop-id="' + sId + '" data-lat="' + s.lat + '" data-lon="' + s.lon + '" data-stop-name="' + sName + '" data-stop-letter="' + sLetter + '">'
           + '<span class="rs-index">' + (i + 1) + '</span>'
           + '<span class="rs-dot" style="background:' + modeColor + '"></span>'
-          + '<span class="rs-name">' + s.name + '</span>'
+          + '<span class="rs-name">' + sName + '</span>'
           + stopCodeHtml
           + stopLetterHtml
           + '</div>';
