@@ -1407,6 +1407,37 @@
           currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
       }
+
+      // Ensure footer (destination info) can be scrolled fully into view on phones
+      // Use the visible scroll parent (#trip-nav-body) and viewport rects so this
+      // works reliably across Safari on iOS where offsets can be tricky.
+      setTimeout(() => {
+        try {
+          const footer = container.querySelector('.tl-footer');
+          const scrollParent = document.getElementById('trip-nav-body') || container.parentElement;
+          if (!footer || !scrollParent) return;
+
+          const spRect = scrollParent.getBoundingClientRect();
+          const ftRect = footer.getBoundingClientRect();
+
+          // Read safe area bottom from CSS var if available
+          const docStyle = getComputedStyle(document.documentElement);
+          const safeAreaBottom = parseFloat(docStyle.getPropertyValue('--safe-b')) || 0;
+          const extraPadding = 12 + (isNaN(safeAreaBottom) ? 0 : safeAreaBottom);
+
+          const visibleBottom = spRect.bottom - extraPadding;
+          if (ftRect.bottom > visibleBottom) {
+            // Amount in pixels to scroll the scrollParent so the footer.bottom <= visibleBottom
+            const delta = Math.ceil(ftRect.bottom - visibleBottom + 8);
+            // Convert viewport delta to scrollParent coordinates by using footer.offsetTop
+            // relative to scrollParent and adjust
+            const footerOffsetTop = footer.offsetTop;
+            const footerOffsetBottom = footerOffsetTop + footer.offsetHeight;
+            const scrollNeeded = footerOffsetBottom - (scrollParent.scrollTop + scrollParent.clientHeight - extraPadding) + 8;
+            scrollParent.scrollBy({ top: scrollNeeded, left: 0, behavior: 'smooth' });
+          }
+        } catch (e) { /* ignore */ }
+      }, 500);
     }
 
     function renderTripRoutes() {

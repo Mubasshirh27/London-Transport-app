@@ -926,17 +926,63 @@ button:has(.ic) { display: inline-flex; align-items: center; justify-content: ce
   100% { opacity: 0; transform: translateY(-6px); }
 }
 #trip-nav-body {
+  /* Scrollable content area for the trip bottom sheet. Uses flex:1 so it
+     occupies remaining height in the sheet and scrolls when content overflows. */
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 14px calc(12px + env(safe-area-inset-bottom, 0px));
-  -webkit-overflow-scrolling: touch;
+  /* Ensure there's extra room at the bottom so final items are not occluded by
+     the system home indicator / rounded corners. The padding includes room for
+     the sticky footer so content can be scrolled above it. */
+  padding: 0 14px calc(96px + env(safe-area-inset-bottom, 0px));
+  -webkit-overflow-scrolling: touch; /* smooth scrolling on iOS */
   min-height: 0;
   max-height: 100%;
   box-sizing: border-box;
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(18,52,59,.4) transparent;
 }
-#trip-nav-body::-webkit-scrollbar { width: 3px; }
-#trip-nav-body::-webkit-scrollbar-thumb { background: rgba(18,52,59,.4); border-radius: 2px; }
+/* WebKit scrollbar styling */
+/* Make the scrollbar more visible so users can see scrollable content */
+#trip-nav-body::-webkit-scrollbar { width: 10px; }
+#trip-nav-body::-webkit-scrollbar-track { background: rgba(0,0,0,.04); border-radius: 6px; }
+#trip-nav-body::-webkit-scrollbar-thumb { background: rgba(18,52,59,.45); border-radius: 6px; border: 2px solid rgba(0,0,0,.02); }
+#trip-nav-body::-webkit-scrollbar-thumb:hover { background: rgba(18,52,59,.6); }
+
+/* Ensure the timeline itself doesn't push the sheet taller than its container */
+#trip-timeline {
+  box-sizing: border-box;
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+/* Add a spacer at the end of the scrollable trip body so the last list item
+   can be scrolled above the OS home indicator / safe area. This is necessary
+   on some phones and browsers where the viewport and safe-area handling vary. */
+#trip-nav-body::after {
+  content: '';
+  display: block;
+  /* Spacer remains but primary solution is a sticky footer below */
+  height: calc(40px + env(safe-area-inset-bottom, 0px));
+  width: 1px;
+  opacity: 0;
+}
+
+/* Make the trip footer sticky inside the scroll area so it's always visible
+   at the bottom of the sheet. This ensures destination info never hides.
+   The container retains extra bottom padding so content can scroll above it. */
+.tl-footer {
+  position: sticky;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 20;
+  background: linear-gradient(rgba(18,52,59,.02), rgba(18,52,59,.00));
+  padding: 10px 6px;
+  box-shadow: 0 -6px 16px rgba(0,0,0,.08);
+  border-top: 1px solid rgba(18,52,59,.06);
+  margin-top: 8px;
+}
+.tl-footer .tl-footer-leg { display:flex; gap:8px; align-items:center; }
+.tl-footer .tl-footer-name { font-weight:700; }
 #trip-eta { font-size: 10px; font-weight: 700; color: var(--accent-text); opacity: .8; white-space: nowrap; min-width: 50px; }
 #trip-progress-bar { flex: 1; height: 3px; background: rgba(18,52,59,.12); border-radius: 2px; overflow: hidden; max-width: 120px; min-width: 50px; }
 #trip-progress-fill { height: 100%; width: 0%; background: var(--accent-text); border-radius: 2px; transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1); }
