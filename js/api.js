@@ -3,6 +3,14 @@ const Api = (() => {
   const KEY = CONFIG.tflApiKey;
   let rateLimitPromise = Promise.resolve();
 
+  function _withOfflineQueue(fn, meta) {
+    if (typeof OfflineManager !== 'undefined' && !OfflineManager.isOnline()) {
+      if (meta) OfflineManager.savePendingRequest(meta);
+      return OfflineManager.queueRequest(fn);
+    }
+    return fn();
+  }
+
   async function _rawTfl(endpoint, params = {}) {
     params.app_key = KEY;
     const qs = Object.entries(params)
@@ -31,12 +39,15 @@ const Api = (() => {
   }
 
   function fetchTfl(endpoint, params = {}) {
-    const p = rateLimitPromise.then(async () => await _rawTfl(endpoint, params));
-    rateLimitPromise = p.then(
-      () => new Promise(r => setTimeout(r, 200)),
-      () => new Promise(r => setTimeout(r, 200))
-    );
-    return p;
+    const execute = () => {
+      const p = rateLimitPromise.then(async () => await _rawTfl(endpoint, params));
+      rateLimitPromise = p.then(
+        () => new Promise(r => setTimeout(r, 200)),
+        () => new Promise(r => setTimeout(r, 200))
+      );
+      return p;
+    };
+    return _withOfflineQueue(execute, { endpoint, params });
   }
 
   function parseCoord(input) {
@@ -213,6 +224,14 @@ const Api = (() => {
 
   async function getStopTimetable(stopId, lineId) {
     return fetchTfl(`/StopPoint/${encodeURIComponent(stopId)}/Timetable/${encodeURIComponent(lineId)}`);
+  }
+
+  // Register replayer for persisted pending requests
+  if (typeof OfflineManager !== 'undefined' && OfflineManager.setRequestReplayer) {
+    OfflineManager.setRequestReplayer((meta) => {
+      const p = fetchTfl(meta.endpoint, meta.params || {});
+      return p;
+    });
   }
 
   return { fetchTfl, getJourney, getStopArrivals, getNearbyStops, searchStops, getLineStatus, getLineRoutes, getBikePoints, getDisruptions, getStopProperties, getMetaModes, parseCoord, getLineStopPoints, getLineById, geocodePostcode, searchPostcodes, getWalkingRoute, getLineTimetable, getStopRoutes, getStopTimetable, normalizeLineId };

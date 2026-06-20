@@ -269,7 +269,7 @@ const Router = (() => {
     const transitJourneys = journeys.filter(j => j.legs.some(l => l.mode !== 'walking'));
     const walkOnly = journeys.find(j => j.legs.every(l => l.mode === 'walking'));
 
-    let fastest, cheapest, balanced;
+    let fastest, cheapest, balanced, fewestTransfers, leastWalking;
     if (transitJourneys.length) {
       fastest = transitJourneys.reduce((a, b) => a.duration < b.duration ? a : b);
       cheapest = transitJourneys.reduce((a, b) => {
@@ -277,14 +277,16 @@ const Router = (() => {
         const bf = b.estimatedFare != null ? b.estimatedFare : b.fare != null ? b.fare : 999;
         return af < bf ? a : b;
       });
+      fewestTransfers = transitJourneys.reduce((a, b) => a.transfers < b.transfers ? a : b);
+      leastWalking = transitJourneys.reduce((a, b) => a.walkDuration < b.walkDuration ? a : b);
       const byBalance = [...transitJourneys].sort((a, b) => (a.transfers - b.transfers) || (a.walkDuration - b.walkDuration) || (a.duration - b.duration));
-      balanced = byBalance.find(j => j !== fastest && j !== cheapest) || byBalance[0];
+      balanced = byBalance.find(j => j !== fastest && j !== cheapest && j !== fewestTransfers && j !== leastWalking) || byBalance[0];
     } else {
       // Only walking available — show it
-      fastest = cheapest = balanced = walkOnly || journeys[0];
+      fastest = cheapest = balanced = fewestTransfers = leastWalking = walkOnly || journeys[0];
     }
 
-    return { fastest, cheapest, balanced, all: journeys, raw, walkingJourney: walkOnly || null };
+    return { fastest, cheapest, balanced, fewestTransfers, leastWalking, all: journeys, raw, walkingJourney: walkOnly || null };
   }
 
   function getModeColor(mode) {

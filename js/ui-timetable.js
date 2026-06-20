@@ -421,7 +421,7 @@
 
     // Fetch arrivals first to get display name
     let arrivals = [];
-    try { arrivals = await Stops.getArrivals(stopId); } catch (e) { console.log('[Timetable] Arrivals error:', e); }
+    try { arrivals = await (Stops.getArrivalsForStopGroup ? Stops.getArrivalsForStopGroup(stopId) : Stops.getArrivals(stopId)); } catch (e) { console.log('[Timetable] Arrivals error:', e); }
     const displayName = arrivals.length ? (arrivals.find(a => a.lineId === lineId || a.line === lineId)?.line || lineId) : lineId;
     const eLineId = esc(lineId), eDisplayName = esc(displayName), eStopName = esc(stopName), eStopId = esc(stopId);
     const headerSuffix = directionFilter ? ' (' + esc(directionFilter) + ')' : '';

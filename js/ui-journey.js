@@ -293,7 +293,6 @@
     const extraFeatured = [];
     if (journeys.walkingJourney && !featured.includes(journeys.walkingJourney)) extraFeatured.push(journeys.walkingJourney);
     const extraSet = new Set(extraFeatured);
-    const remainder = (journeys.all || []).filter(j => !featured.includes(j) && !extraSet.has(j));
 
     let html = '<div class="results-header">'+
       '🏆 Best Routes'+
@@ -334,9 +333,32 @@
           '</div>'+
         '</div>';
       } else {
-        html += renderCard(cheapest, 'cheapest', '💰 Cheapest', '💰', '#00a94f', false);
-        html += renderCard(fastest, 'fastest', '⚡ Fastest', '⚡', '#0019a8', false);
-        html += renderCard(balanced, 'balanced', '🧠 Smartest', '🧠', '#e32017', false);
+        const featuredCards = [
+          { key: 'cheapest', journey: cheapest, label: '💰 Cheapest', icon: '💰', color: '#00a94f' },
+          { key: 'fastest', journey: fastest, label: '⚡ Fastest', icon: '⚡', color: '#0019a8' },
+          { key: 'balanced', journey: balanced, label: '🧠 Smartest', icon: '🧠', color: '#e32017' },
+          { key: 'fewestTransfers', journey: fewestTransfers, label: '🔄 Fewest Changes', icon: '🔄', color: '#6950a0' },
+          { key: 'leastWalking', journey: leastWalking, label: '🚶 Least Walking', icon: '🚶', color: '#f86c00' }
+        ];
+        const seen = new Set();
+        window._featuredJourneys = [];
+        featuredCards.forEach(fc => {
+          if (fc.journey && !seen.has(fc.journey)) {
+            seen.add(fc.journey);
+            window._featuredJourneys.push(fc);
+          }
+        });
+        if ((journeys.all || []).length > window._featuredJourneys.length) {
+          (journeys.all || []).forEach((j, idx) => {
+            if (!seen.has(j)) {
+              seen.add(j);
+              window._featuredJourneys.push({ key: 'route_' + idx, journey: j, label: 'Route ' + (idx + 1), icon: '🚌', color: '#555' });
+            }
+          });
+        }
+        window._featuredJourneys.forEach((fc, i) => {
+          html += renderCard(fc.journey, fc.key, fc.label, fc.icon, fc.color, i === 0);
+        });
       }
     }
     extraFeatured.forEach(j => {
@@ -370,6 +392,9 @@
         '</div>'+
       '</div>';
     });
+    const featuredSet = new Set();
+    (window._featuredJourneys || []).forEach(fc => featuredSet.add(fc.journey));
+    const remainder = (journeys.all || []).filter(j => !featuredSet.has(j));
     if (remainder.length) {
       html += '<div class="all-routes-section"><button class="all-routes-toggle">All ' + journeys.all.length + ' routes <span class="ic" data-ic="chevron_down"></span></button><div class="all-routes-list" style="display:none">' +
         remainder.map((j, i) => {
@@ -441,7 +466,8 @@
 
     function getJourneyByKey(k) {
       if (k === 'walking' && journeys.walkingJourney) return journeys.walkingJourney;
-      return journeys[k] || (journeys.all && journeys.all[parseInt(k.replace('route_', ''), 10)]);
+      if (journeys[k]) return journeys[k];
+      return journeys.all && journeys.all[parseInt(k.replace('route_', ''), 10)];
     }
 
     resultsPanel.querySelectorAll('.journey-card').forEach(card => {

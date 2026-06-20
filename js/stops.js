@@ -157,7 +157,7 @@ const Stops = (() => {
     return {
       line: a.lineName || a.lineId || '',
       lineId: a.lineId || '',
-      mode: a.modeName,
+      mode: (a.modeName || a.mode || 'other').toString().toLowerCase().replace(/\s+/g, '-'),
       destination: dest,
       expected: a.expectedArrival,
       timeToStation: Math.max(0, Math.round(((a.expectedArrival ? new Date(a.expectedArrival) : now) - now) / 60000)),
@@ -253,5 +253,9 @@ const Stops = (() => {
     } catch { return null; }
   }
 
-  return { getNearby, getArrivals, groupArrivals, getModeIcon, getModeColor, resolveStopIds, getStopAccessibility };
+  function clearCache() {
+    _accCache.clear();
+  }
+
+  return { getNearby, getArrivals, groupArrivals, getModeIcon, getModeColor, resolveStopIds, getStopAccessibility, clearCache };
 })();

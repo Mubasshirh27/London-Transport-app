@@ -14,7 +14,7 @@ const STATIC = [
   '/js/ui-departures.js', '/js/ui-timetable.js',
   '/js/ui-nearby.js', '/js/ui-bikes.js',
   '/js/ui-route.js', '/js/ui-favorites.js',
-  '/js/ui-helpers.js', '/js/app.js',
+  '/js/ui-helpers.js', '/js/app.js', '/js/offline-manager.js',
   '/img/icon.svg', '/img/icon-192.png', '/img/icon-512.png',
   '/img/people-walking-across-a-busy-city-street-with-blurred-background-photo.jpg',
   '/manifest.json'
@@ -58,10 +58,17 @@ async function handleRequest(request) {
     }
 
     if (isApiRequest(url)) {
+      const apiCache = await caches.open(API_CACHE);
+      const cached = await apiCache.match(request);
+      if (cached) {
+        // stale-while-revalidate: serve cached, refresh in background
+        fetchAndCache(request, API_CACHE).catch(() => {});
+        return cached;
+      }
       try {
         return await fetchAndCache(request, API_CACHE);
       } catch {
-        return await fromCacheOrFallback(request, API_CACHE);
+        return offlineResponse('', 503);
       }
     }
 

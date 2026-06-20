@@ -255,7 +255,8 @@ const MapView = (() => {
       const accData = await Stops.getStopAccessibility(stopId).catch(() => null);
       const accBadge = accData && accData.stepFree ? ` <span class="acc-badge" title="${(accData.text || 'Step-free access')}">\u267F</span>` : '';
       try {
-        const arrivals = await Stops.getArrivals(stopId);
+        // try aggregated arrivals for station groups so national-rail platforms are included
+        const arrivals = await (Stops.getArrivalsForStopGroup ? Stops.getArrivalsForStopGroup(stopId) : Stops.getArrivals(stopId));
         if (arrivals.length) {
           const grouped = Stops.groupArrivals(arrivals);
           grouped.forEach(g => {
@@ -583,7 +584,7 @@ const MapView = (() => {
       try {
         const pct = b.docks > 0 ? (b.bikes / b.docks) * 100 : 0;
         const color = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
-        const bName = esc(b.name), bId = esc(b.id.replace('BikePoints_', ''));
+        const bName = esc(b.name), bId = esc((b.id || '').replace('BikePoints_', ''));
         const el = document.createElement('div');
         el.style.cssText = `background:${color};width:22px;height:22px;border-radius:50%;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;font-size:12px;cursor:pointer;position:absolute;z-index:99999`;
         el.textContent = '🚲';
@@ -635,6 +636,22 @@ const MapView = (() => {
     });
   }
 
+  function refreshTiles() {
+    if (!map) return;
+    loadTileProvider(0);
+  }
+
   function getStopData(id) { return stopMarkerData.find(s => s.id === id); }
-  return { init, addMarker, addRoute, fitBounds, clearRoutes, clearMarkers, clearAll, onClick, clearClick, flyTo, panTo, getActiveCenter, getMap: () => map, showStopMarkers, hideStopMarkers, showBikeMarkers, hideBikeMarkers, showRouteStopMarkers, hideRouteStopMarkers, showUserLocation, hideUserLocation, isUserLocationVisible, setFollowMode, isFollowMode, onMoveEnd, offMoveEnd, showStopLivePopup, set3dMap, get3dMap, clear3dAll, clear3dState, resync3d, syncBikeMarkers3d, getStopData };
+
+  // Offline sync: refresh tiles when coming back online
+  if (typeof OfflineManager !== 'undefined') {
+    OfflineManager.onSync(() => {
+      if (map) {
+        map.invalidateSize();
+        refreshTiles();
+      }
+    });
+  }
+
+  return { init, addMarker, addRoute, fitBounds, clearRoutes, clearMarkers, clearAll, onClick, clearClick, flyTo, panTo, getActiveCenter, getMap: () => map, showStopMarkers, hideStopMarkers, showBikeMarkers, hideBikeMarkers, showRouteStopMarkers, hideRouteStopMarkers, showUserLocation, hideUserLocation, isUserLocationVisible, setFollowMode, isFollowMode, onMoveEnd, offMoveEnd, showStopLivePopup, set3dMap, get3dMap, clear3dAll, clear3dState, resync3d, syncBikeMarkers3d, getStopData, refreshTiles };
 })();

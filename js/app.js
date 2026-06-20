@@ -26,23 +26,78 @@
 
   window.addEventListener('unhandledrejection', e => { e.preventDefault(); console.warn('[UH]', e.reason); });
 
-  document.addEventListener('DOMContentLoaded', async () => {
-    UI.init();
-    Icon.init();
+    document.addEventListener('DOMContentLoaded', async () => {
+      UI.init();
+      Icon.init();
+      // Fetch line statuses once and refresh periodically for timeline badges
+      try {
+        window.__statusLines = await Status.fetchAll();
+      } catch (e) { window.__statusLines = []; }
+      setInterval(async () => { try { window.__statusLines = await Status.fetchAll(); } catch (e) {} }, 60000);
 
-    // --- Offline detection ---
-    function updateOnlineStatus() {
-      const online = navigator.onLine;
-      const badge = document.getElementById('offline-badge');
-      const banner = document.getElementById('offline-banner');
-      const navBar = document.getElementById('trip-nav-bar');
-      if (badge) badge.style.display = online ? 'none' : '';
-      if (banner) banner.style.display = (online || !navBar || navBar.style.display === 'none') ? 'none' : '';
-      window._lastConnectionCheck = Date.now();
+    // --- Offline detection (using OfflineManager) ---
+    if (typeof OfflineManager !== 'undefined') {
+      OfflineManager.init();
+      OfflineManager.onConnectivityChange((online) => {
+        const badge = document.getElementById('offline-badge');
+        const banner = document.getElementById('offline-banner');
+        const navBar = document.getElementById('trip-nav-bar');
+        const sync = document.getElementById('sync-indicator');
+        if (badge) badge.style.display = online ? 'none' : '';
+        if (banner) banner.style.display = (online || !navBar || navBar.style.display === 'none') ? 'none' : '';
+        if (sync) {
+          sync.className = 'sync-indicator ' + (online ? 'synced' : 'offline');
+          sync.title = online ? 'Synced' : 'Offline';
+        }
+        window._lastConnectionCheck = Date.now();
+      });
+      OfflineManager.onSync(() => {
+        const sync = document.getElementById('sync-indicator');
+        if (sync) {
+          sync.className = 'sync-indicator syncing';
+          sync.title = 'Syncing...';
+        }
+        if (typeof Status !== 'undefined') Status.fetchAll().catch(() => {});
+        if (typeof Stops !== 'undefined') {
+          if (typeof Stops.clearCache === 'function') Stops.clearCache();
+        }
+        // Re-render timeline with latest GPS if trip active
+        if (tripActiveKey && activeJourneys && activeJourneys[tripActiveKey] && _lastLat != null && _lastLon != null) {
+          const journey = activeJourneys[tripActiveKey];
+          if (journey && journey.legs && tripLegIndex < journey.legs.length) {
+            renderTripTimeline(journey, journey.legs, tripLegIndex, _lastLat, _lastLon, null, '');
+          }
+        }
+        // Refresh map tiles
+        if (typeof MapView !== 'undefined' && MapView.getMap) {
+          const m = MapView.getMap();
+          if (m) {
+            m.invalidateSize();
+            if (typeof MapView.refreshTiles === 'function') MapView.refreshTiles();
+          }
+        }
+        setTimeout(() => {
+          const s = document.getElementById('sync-indicator');
+          if (s && OfflineManager.isOnline()) {
+            s.className = 'sync-indicator synced';
+            s.title = 'Synced';
+          }
+        }, 1000);
+      });
+    } else {
+      function updateOnlineStatus() {
+        const online = navigator.onLine;
+        const badge = document.getElementById('offline-badge');
+        const banner = document.getElementById('offline-banner');
+        const navBar = document.getElementById('trip-nav-bar');
+        if (badge) badge.style.display = online ? 'none' : '';
+        if (banner) banner.style.display = (online || !navBar || navBar.style.display === 'none') ? 'none' : '';
+        window._lastConnectionCheck = Date.now();
+      }
+      window.addEventListener('online', updateOnlineStatus);
+      window.addEventListener('offline', updateOnlineStatus);
+      updateOnlineStatus();
     }
-    window.addEventListener('online', updateOnlineStatus);
-    window.addEventListener('offline', updateOnlineStatus);
-    updateOnlineStatus();
 
     // --- Resume prompt ---
     function doRestoreTrip(data) {
@@ -309,14 +364,42 @@
 
     function startGPSWatch() {
       let firstFix = true;
+      let lastGoodLat = null, lastGoodLon = null;
 
       return navigator.geolocation.watchPosition(
         (pos) => {
           if (tripWatchId === null) return;
           if (!pos || !pos.coords) return;
           const { latitude: lat, longitude: lon, speed, heading, accuracy } = pos.coords;
+          
+          // GPS accuracy filter - skip updates with poor accuracy (underground drift)
+          if (accuracy != null && accuracy > 200) {
+            // Use last known good position for trip progress
+            if (lastGoodLat != null && lastGoodLon != null) {
+              updateTripProgress(lastGoodLat, lastGoodLon, pos);
+            }
+            return;
+          }
+          
+          lastGoodLat = lat; lastGoodLon = lon;
           _lastLat = lat; _lastLon = lon;
           const now = Date.now();
+          
+          // Snapshot trip state for offline backup
+          if (tripActiveKey && activeJourneys && activeJourneys[tripActiveKey]) {
+            window.__tripStateSnapshot = {
+              key: tripActiveKey,
+              journey: activeJourneys[tripActiveKey],
+              legIndex: tripLegIndex,
+              lastTransition: lastLegTransitionTime,
+              currentStationIndex: currentStationIndex,
+              fromLabel: UI.getFromText() || 'From',
+              toLabel: UI.getToText() || 'Destination',
+              lat: lat,
+              lon: lon
+            };
+          }
+          
           if (_posHistory.length && _posHistory[_posHistory.length - 1]) {
             const last = _posHistory[_posHistory.length - 1];
             const dist = haversine(last.lat, last.lon, lat, lon);
@@ -376,7 +459,22 @@
     let _currentSpeed = 1.4;
     let _tripDelaySecs = 0;
     let _autoEndTimer = null;
-    function _onVisibilityChange() { if (document.hidden) saveTripState(); }
+    let _autoEndPaused = false;
+    function _onVisibilityChange() { 
+      if (document.hidden) { 
+        saveTripState(); 
+        if (_autoEndTimer !== null) { 
+          clearTimeout(_autoEndTimer); 
+          _autoEndTimer = null;
+          _autoEndPaused = true; 
+        }
+      } else { 
+        if (_autoEndPaused) { 
+          _autoEndPaused = false; 
+        }
+        if (typeof OfflineManager !== 'undefined') OfflineManager.forceCheck(); 
+      } 
+    }
 
     function _cleanupNavHandlers() {
       if (_navHeaderCleanup) {
@@ -413,6 +511,7 @@
 
     document.addEventListener('start-trip', (e) => {
       const key = e.detail.key;
+      const restore = e.detail.restore || false;
       if (!activeJourneys) return;
       if (!activeJourneys[key] && activeJourneys.all) {
         if (key === 'walking' && activeJourneys.walkingJourney) {
@@ -432,16 +531,33 @@
       if (_gpsRetryTimer) { clearTimeout(_gpsRetryTimer); _gpsRetryTimer = null; _gpsRetryCount = 0; }
       _cleanupNavHandlers();
 
+      // Restore offline backup if available (for non-explicit restore)
+      let restoredFromBackup = false;
+      if (!restore && typeof OfflineManager !== 'undefined') {
+        const backup = OfflineManager.restoreTripState ? OfflineManager.restoreTripState() : null;
+        if (backup && backup.journey && backup.journey.legs) {
+          activeJourneys[backup.key] = backup.journey;
+          key = backup.key;
+          tripLegIndex = backup.legIndex || 0;
+          lastLegTransitionTime = backup.lastTransition || Date.now();
+          currentStationIndex = backup.currentStationIndex || 0;
+          restoredFromBackup = true;
+          UI.showToast('Trip restored from offline backup', 2000);
+        }
+      }
+
       tripActiveKey = key;
-      tripLegIndex = window.__tripRestoreLegIndex !== undefined ? window.__tripRestoreLegIndex : 0;
-      lastLegTransitionTime = window.__tripRestoreLastTransition !== undefined ? window.__tripRestoreLastTransition : Date.now();
+      if (!restoredFromBackup) {
+        tripLegIndex = window.__tripRestoreLegIndex !== undefined ? window.__tripRestoreLegIndex : 0;
+        lastLegTransitionTime = window.__tripRestoreLastTransition !== undefined ? window.__tripRestoreLastTransition : Date.now();
+        currentStationIndex = getLegStartStationIndex(activeJourneys[key].legs, tripLegIndex);
+      }
       lastRenderedLegIndex = -1;
       window.__tripRestoreLegIndex = undefined;
       window.__tripRestoreLastTransition = undefined;
       _posHistory = [];
       _currentSpeed = 1.4;
       _tripDelaySecs = 0;
-      currentStationIndex = getLegStartStationIndex(activeJourneys[key].legs, tripLegIndex);
       if (_autoEndTimer !== null) { clearTimeout(_autoEndTimer); _autoEndTimer = null; }
 
       // Switch to journey tab
@@ -479,7 +595,7 @@
           rerouteBtn.disabled = true;
           tripRerouting = true;
           navigator.geolocation.getCurrentPosition(
-            (pos) => triggerReroute(pos.coords.latitude, pos.coords.longitude),
+            (pos) => triggerReroute(pos.coords.latitude, pos.coords.longitude, true),
             () => { tripRerouting = false; rerouteBtn.disabled = false; UI.showError('Could not get location for reroute'); },
             { enableHighAccuracy: true, timeout: 8000 }
           );
@@ -513,7 +629,12 @@
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(
             (pos) => {
-              MapView.flyTo(pos.coords.latitude, pos.coords.longitude, 16);
+              const lat = pos.coords.latitude, lon = pos.coords.longitude;
+              if (lat != null && lon != null && !isNaN(lat) && !isNaN(lon) && isFinite(lat) && isFinite(lon)) {
+                MapView.flyTo(lat, lon, 16);
+              } else {
+                MapView.flyTo(51.5074, -0.1278, 14);
+              }
             },
             () => { MapView.flyTo(51.5074, -0.1278, 14); },
             { enableHighAccuracy: true, timeout: 8000 }
@@ -528,7 +649,7 @@
 
       // Enrich path geometry from TfL Route Sequence API (skip offline)
       const enrichJourney = activeJourneys[tripActiveKey];
-      if (enrichJourney && navigator.onLine) {
+      if (enrichJourney && (typeof OfflineManager !== 'undefined' ? OfflineManager.isOnline() : navigator.onLine)) {
         Router.enrichJourneyPaths(enrichJourney).then(() => {
           const j = activeJourneys[tripActiveKey];
           if (j && _lastLat != null) {
@@ -1071,9 +1192,26 @@
     function renderTripTimeline(journey, legs, tripLegIdx, lat, lon, distToNextStation, etaStr) {
       const container = document.getElementById('trip-timeline');
       if (!container) { return; }
-      container.innerHTML = '';
 
       const currentLeg = legs[tripLegIdx];
+      if (!currentLeg) return;
+
+      // Offline caching: cache key based on journey and leg
+      const cacheKey = 'timeline_' + (journey.journeyId || 'unknown') + '_' + tripLegIdx;
+      const isOnline = typeof OfflineManager !== 'undefined' ? OfflineManager.isOnline() : navigator.onLine;
+      
+      // Try to get cached timeline when offline
+      if (!isOnline && typeof OfflineManager !== 'undefined') {
+        const cached = OfflineManager.getCachedResponse(cacheKey);
+        if (cached) {
+          document.getElementById('trip-timeline').innerHTML = cached;
+          return;
+        }
+      }
+
+      container.innerHTML = '';
+
+      currentLeg = legs[tripLegIdx];
       if (!currentLeg) return;
 
       const now = Date.now();
@@ -1119,12 +1257,34 @@
       const arrTime = currentLeg.arrivalTime ? new Date(currentLeg.arrivalTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
       if (currentLeg.mode !== 'walking') {
+        // Determine line status if available (national-rail / operator lines)
+        let statusHtml = '';
+        try {
+          const statusLines = window.__statusLines || [];
+          const lineId = (currentLeg.lineId || currentLeg.routeId || '').toString();
+          let lineStatus = null;
+          if (lineId) lineStatus = Status.getLineStatus(statusLines, lineId);
+          if (!lineStatus && currentLeg.routeName) {
+            // fallback match by name
+            lineStatus = statusLines.find(s => s.name && s.name.toLowerCase() === (currentLeg.routeName || '').toLowerCase());
+          }
+          if (!lineStatus && currentLeg.mode === 'national-rail') {
+            // try generic national-rail entry
+            lineStatus = statusLines.find(s => s.mode === 'national-rail');
+          }
+          if (lineStatus) {
+            statusHtml = '<span class="tl-line-status ' + (lineStatus.statusCls || '') + '" title="' + escapeHtml(lineStatus.statusText || '') + '">' + escapeHtml((lineStatus.statusText || '').split(':')[0]) + '</span>';
+          }
+        } catch (e) { statusHtml = ''; }
+
         html += '<div class="tl-leg-header">';
         html += '<span class="tl-leg-mode-icon">' + modeIcon + '</span>';
         html += '<div class="tl-leg-info">';
         html += '<div class="tl-leg-line-name">' + escapeHtml(routeName) + (direction ? ' <span class="tl-leg-dir">→ ' + escapeHtml(direction) + '</span>' : '') + '</div>';
         html += '</div>';
         if (platform) html += '<div class="tl-leg-platform">' + escapeHtml(platform) + '</div>';
+        // append status badge if found
+        html += statusHtml;
         html += '</div>';
       }
 
@@ -1400,6 +1560,11 @@
 
       container.innerHTML = html;
 
+      // Cache timeline for offline use
+      if (isOnline && typeof OfflineManager !== 'undefined') {
+        OfflineManager.cacheResponse(cacheKey, html);
+      }
+
       // Auto-scroll to current station
       const currentEl = container.querySelector('.tl-station.current');
       if (currentEl) {
@@ -1613,14 +1778,16 @@
           }
           if (minDist < 80) break;
         }
-        if (minDist > 200) {
+        const isOnline = typeof OfflineManager !== 'undefined' ? OfflineManager.isOnline() : navigator.onLine;
+        const gpsAccurate = (gpsPos && gpsPos.coords && gpsPos.coords.accuracy != null && gpsPos.coords.accuracy <= 100);
+        if (minDist > 200 && isOnline && gpsAccurate) {
           if (tripDeviationStart === null) tripDeviationStart = now;
           else if (now - tripDeviationStart > 15000) {
             tripDeviationStart = null;
             tripRerouting = true;
             triggerReroute(lat, lon);
           }
-        } else {
+        } else if (minDist <= 200 || !isOnline || !gpsAccurate) {
           tripDeviationStart = null;
         }
       }
@@ -1675,7 +1842,8 @@
       const etaStr = eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       // --- Connection Alert Check (every 30s, offline-safe) ---
-      if (!tripArrived && tripLegIndex < legs.length - 1 && now - (window._lastConnectionCheck || 0) > 30000 && navigator.onLine) {
+      const isOnline = typeof OfflineManager !== 'undefined' ? OfflineManager.isOnline() : navigator.onLine;
+      if (!tripArrived && tripLegIndex < legs.length - 1 && now - (window._lastConnectionCheck || 0) > 30000 && isOnline) {
         window._lastConnectionCheck = now;
         const nextLeg = legs[tripLegIndex + 1];
         if (nextLeg && nextLeg.from && nextLeg.from.id && nextLeg.mode !== 'walking' && ['bus','tube','dlr','overground','elizabeth-line','national-rail','tram'].includes(nextLeg.mode)) {
@@ -1793,11 +1961,23 @@
       setTimeout(() => { if (note.parentNode) note.remove(); }, 4200);
     }
 
-    async function triggerReroute(fromLat, fromLon) {
-      if (!navigator.onLine) { tripRerouting = false; showRerouteNotification('Cannot reroute while offline'); return; }
+    async function triggerReroute(fromLat, fromLon, userConfirmed) {
+      const isOnline = typeof OfflineManager !== 'undefined' ? OfflineManager.isOnline() : navigator.onLine;
+      if (!isOnline) { tripRerouting = false; showRerouteNotification('Cannot reroute while offline'); return; }
       if (!activeJourneys || !tripActiveKey) { tripRerouting = false; return; }
       const oldJourney = activeJourneys[tripActiveKey];
       if (!oldJourney || !oldJourney.legs.length) { tripRerouting = false; return; }
+      
+      if (!userConfirmed) {
+        // Show confirmation dialog
+        const confirmed = confirm('Route deviation detected. Recalculate route? This will restart from your current location.');
+        if (!confirmed) {
+          tripRerouting = false;
+          showRerouteNotification('Reroute cancelled');
+          return;
+        }
+      }
+      
       const destLeg = oldJourney.legs[oldJourney.legs.length - 1];
       if (!destLeg || !destLeg.to || destLeg.to.lat == null) { tripRerouting = false; return; }
       const from = { label: 'Current Location', lat: fromLat, lon: fromLon };

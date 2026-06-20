@@ -1,5 +1,5 @@
 const CONFIG = {
-  tflApiKey: window.__TFL_API_KEY || (location.search.match(/[?&]apikey=([^&]+)/) || [])[1] || '52d9e0ba4a8e4a15a7b2b5487ac3a55f',
+  tflApiKey: window.__TFL_API_KEY || (location.search.match(/[?&]apikey=([^&]+)/) || [])[1] || '17da41b3b2d54d33916ad2a8e4980c44',
   tflApiBase: 'https://api.tfl.gov.uk',
   mapCenter: [51.5074, -0.1278],
   mapZoom: 13,
