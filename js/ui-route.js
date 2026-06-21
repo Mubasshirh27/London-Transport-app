@@ -4,13 +4,13 @@
   UI.showRouteStopList = function(stops, routeName, routeId, mode, fromTerminus, toTerminus) {
     const el = document.getElementById('route-results');
     if (!stops || !stops.length) {
-      el.innerHTML = '<div class="no-data">No stops found for this route</div>';
+      el.innerHTML = '<div class="no-data">No stop data for this route — try a different route number</div>';
       return;
     }
     mode = mode || 'bus';
     const modeIcon = Stops.getModeIcon(mode);
     const modeColor = Stops.getModeColor(mode);
-    const isNight = routeName.toUpperCase().startsWith('N');
+    const isNight = routeName && routeName.toUpperCase().startsWith('N');
     const nightTag = isNight ? '<span class="night-badge">\u{1F319} Night Bus</span>' : '';
     const terminiStr = fromTerminus && toTerminus ? fromTerminus + ' \u2192 ' + toTerminus : '';
     const modeName = mode === 'bus' ? 'Bus' : mode.charAt(0).toUpperCase() + mode.slice(1);

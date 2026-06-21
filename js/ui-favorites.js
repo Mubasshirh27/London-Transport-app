@@ -28,7 +28,7 @@
         '<div class="fav-dropdown-item" data-target="' + target + '" data-label="' + esc(f.label) + '" data-lat="' + esc(f.lat) + '" data-lon="' + esc(f.lon) + '"><span>⭐</span><span class="fav-dd-label">' + esc(f.label) + '</span><button class="fav-dd-remove" data-id="' + esc(f.id) + '">✕</button></div>'
       ).join('');
     } else {
-      html += '<div class="fav-dropdown-empty">No saved places</div>';
+      html += '<div class="fav-dropdown-empty">No saved places — tap ⭐ on a location to save it</div>';
     }
 
     div.innerHTML = html;
@@ -83,7 +83,7 @@
         Store.saveFavorites(updated);
         item.remove();
         if (!div.querySelector('.fav-dropdown-item:not(.save-fav)')) {
-          div.innerHTML = '<div class="fav-dropdown-empty">No saved places</div>';
+          div.innerHTML = '<div class="fav-dropdown-empty">No saved places — tap ⭐ on a location to save it</div>';
           div.classList.add('just-cleared');
         }
       });

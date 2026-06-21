@@ -160,6 +160,7 @@ const Router = (() => {
       }
 
       return {
+        journeyId: j.journeyId || j.id || '',
         duration: j.duration,
         startTime: j.startDateTime,
         arrivalTime: j.arrivalDateTime,
@@ -290,24 +291,11 @@ const Router = (() => {
   }
 
   function getModeColor(mode) {
-    const colors = {
-      bus: '#e32017', tube: '#0019a8', dlr: '#00a94f',
-      overground: '#f86c00', 'elizabeth-line': '#6950a0',
-      'national-rail': '#003688', tram: '#66cc00',
-      'cable-car': '#e21836', riverBus: '#00a4a7',
-      walking: '#666666', cycling: '#fcbb03'
-    };
-    return colors[mode] || '#333';
+    return Modes.getColor(mode);
   }
 
   function getModeIcon(mode) {
-    if (typeof Icon !== 'undefined') {
-      const iconMap = { bus:'bus', tube:'tube', dlr:'dlr', overground:'overground', 'elizabeth-line':'elizabeth', 'national-rail':'train', tram:'tram', walking:'walk', cycling:'bike', riverBus:'bus', cableCar:'cable_car' };
-      const svg = Icon.get(iconMap[mode] || '');
-      if (svg) return svg;
-    }
-    const icons = { bus:'🚌', tube:'🚇', dlr:'🚈', overground:'🚆', 'elizabeth-line':'🚄', 'national-rail':'🚂', tram:'🚊', walking:'🚶', cycling:'🚲', riverBus:'⛴️', cableCar:'🚡' };
-    return icons[mode] || '➡️';
+    return Modes.getIcon(mode);
   }
 
   function parseWktLineString(wkt) {

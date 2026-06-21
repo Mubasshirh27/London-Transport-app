@@ -13,11 +13,11 @@
   UI.showBikePanel = function(points, centerLat, centerLon) {
     const list = document.getElementById('bike-list');
     if (!points || !points.length) {
-      list.innerHTML = '<div class="no-data">No bike stations found</div>';
+      list.innerHTML = '<div class="no-data">No bike stations in this area — try a different location</div>';
       return;
     }
     const sorted = [...points].map(p => {
-      const d = Math.round(haversine(centerLat || 51.5, centerLon || -0.12, p.lat, p.lon));
+      const d = Math.round(haversine(centerLat != null ? centerLat : 51.5, centerLon != null ? centerLon : -0.12, p.lat, p.lon));
       return { ...p, dist: d };
     }).sort((a, b) => a.dist - b.dist);
 

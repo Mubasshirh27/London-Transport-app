@@ -4,18 +4,21 @@ const OfflineManager = (() => {
   let _checkTimer = null;
   let _lastCheck = 0;
   let _pendingRequests = [];
+  let _pendingRequestKeys = new Set();
   let _isRetrying = false;
   let _checkRunning = false;
   let _processingGeneration = 0;
   let _syncCallbacks = new Set();
   let _cache = new Map();
+  let _notifyError = null;
+  const _MAX_PENDING = 50;
   const _CACHE_LOCAL_KEY = 'lt_cache_v1';
   const _CACHE_MAX_ENTRIES = 10;
   const _PENDING_META_KEY = 'lt_pending_meta_v1';
   let _requestReplayer = null;
 
   const CHECK_INTERVAL = 15000;
-  const REAL_PING_URL = 'https://api.tfl.gov.uk/Line/Mode/tube/Status';
+  const REAL_PING_URL = (typeof CONFIG !== 'undefined' && CONFIG.tflApiBase ? CONFIG.tflApiBase : 'https://api.tfl.gov.uk') + '/Line/Mode/tube/Status?app_key=' + (typeof CONFIG !== 'undefined' && CONFIG.tflApiKey ? CONFIG.tflApiKey : '');
   const RETRY_DELAYS = [2000, 5000, 15000, 30000, 60000];
 
   async function _realConnectivityCheck() {
@@ -23,7 +26,7 @@ const OfflineManager = (() => {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
       const res = await fetch(REAL_PING_URL, { 
-        method: 'HEAD', 
+        method: 'GET', 
         cache: 'no-cache',
         signal: controller.signal 
       });
@@ -152,18 +155,19 @@ const OfflineManager = (() => {
     if (_online) _processPendingQueue();
   }
 
+  function _findReqIndex(req) {
+    for (let i = 0; i < _pendingRequests.length; i++) {
+      if (_pendingRequests[i] === req) return i;
+    }
+    return -1;
+  }
+
   function _processPendingQueue() {
     if (_isRetrying || _pendingRequests.length === 0) return;
     _isRetrying = true;
     const gen = _processingGeneration;
 
-    const processNext = async (index = 0) => {
-      if (index >= _pendingRequests.length) {
-        _isRetrying = false;
-        return;
-      }
-
-      const req = _pendingRequests[index];
+    const processOne = async (req) => {
       const { resolve, reject, attempt = 0 } = req;
 
       if (!_online || gen !== _processingGeneration) {
@@ -175,22 +179,39 @@ const OfflineManager = (() => {
         const result = await req.fn();
         resolve(result);
         if (req.retryTimer) { clearTimeout(req.retryTimer); req.retryTimer = null; }
-        _pendingRequests.splice(index, 1);
-        processNext(index);
+        const idx = _findReqIndex(req);
+        if (idx >= 0) {
+          _pendingRequests.splice(idx, 1);
+          if (req._reqKey) _pendingRequestKeys.delete(req._reqKey);
+        }
+        scheduleNext();
       } catch (e) {
         if (attempt < RETRY_DELAYS.length - 1) {
           req.attempt = attempt + 1;
-          req.retryTimer = setTimeout(() => processNext(index), RETRY_DELAYS[attempt]);
+          req.retryTimer = setTimeout(() => processOne(req), RETRY_DELAYS[attempt]);
         } else {
           if (req.retryTimer) { clearTimeout(req.retryTimer); req.retryTimer = null; }
-          _pendingRequests.splice(index, 1);
+          const idx = _findReqIndex(req);
+          if (idx >= 0) {
+            _pendingRequests.splice(idx, 1);
+            if (req._reqKey) _pendingRequestKeys.delete(req._reqKey);
+          }
           reject(e);
-          processNext(index);
+          if (_notifyError) _notifyError('Request failed after retries: ' + (e && e.message ? e.message : 'Unknown error'));
+          scheduleNext();
         }
       }
     };
 
-    processNext();
+    function scheduleNext() {
+      if (_pendingRequests.length === 0 || gen !== _processingGeneration) {
+        _isRetrying = false;
+        return;
+      }
+      processOne(_pendingRequests[0]);
+    }
+
+    scheduleNext();
   }
 
   function _runSyncCallbacks() {
@@ -199,11 +220,31 @@ const OfflineManager = (() => {
     });
   }
 
-  function queueRequest(fn) {
+  function _makeReqKey(fn) {
+    if (typeof fn._metaKey === 'string') return fn._metaKey;
+    return null;
+  }
+
+  function queueRequest(fn, metaKey) {
+    if (metaKey) {
+      fn._metaKey = metaKey;
+      if (_pendingRequestKeys.has(metaKey)) {
+        return Promise.reject(new Error('Request already queued'));
+      }
+      if (_pendingRequestKeys.size >= _MAX_PENDING) {
+        return Promise.reject(new Error('Too many pending requests'));
+      }
+    }
     return new Promise((resolve, reject) => {
-      _pendingRequests.push({ fn, resolve, reject, attempt: 0, queuedAt: Date.now() });
+      const req = { fn, resolve, reject, attempt: 0, queuedAt: Date.now(), _reqKey: metaKey || null };
+      _pendingRequests.push(req);
+      if (metaKey) _pendingRequestKeys.add(metaKey);
       if (_online) _processPendingQueue();
     });
+  }
+
+  function setErrorHandler(fn) {
+    _notifyError = fn;
   }
 
   function onConnectivityChange(cb) {
@@ -277,7 +318,7 @@ const OfflineManager = (() => {
     });
   }
 
-  return { init, isOnline, onConnectivityChange, onSync, queueRequest, forceCheck, getPendingCount, cacheResponse, getCachedResponse, restoreTripState: _restoreTripState, savePendingRequest, setRequestReplayer };
+  return { init, isOnline, onConnectivityChange, onSync, queueRequest, forceCheck, getPendingCount, cacheResponse, getCachedResponse, restoreTripState: _restoreTripState, savePendingRequest, setRequestReplayer, setErrorHandler };
 })();
 
 if (typeof module !== 'undefined') module.exports = OfflineManager;

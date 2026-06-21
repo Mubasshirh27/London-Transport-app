@@ -6,7 +6,7 @@
   UI.showDepartures = function(stopId, stopName, stopLetter) {
     if (departuresTimer2) clearInterval(departuresTimer2);
     const panel = document.getElementById('departures-panel');
-    panel.style.display = 'flex';
+    panel.classList.add('open');
     panel.dataset.stopId = stopId;
     panel.dataset.stopName = stopName;
     panel.dataset.stopLetter = stopLetter || '';
@@ -29,10 +29,10 @@
     }).catch(() => {});
     loadArrivals(stopId, list).catch(() => {});
     departuresTimer2 = setInterval(async () => {
-      if (panel.style.display !== 'none') await loadArrivals(stopId, list, true).catch(() => {});
+      if (panel.classList.contains('open')) await loadArrivals(stopId, list, true).catch(() => {});
     }, 30000);
     panel.querySelector('.panel-close').onclick = () => {
-      panel.style.display = 'none';
+      panel.classList.remove('open');
       if (departuresTimer2) { clearInterval(departuresTimer2); departuresTimer2 = null; }
     };
     panel.querySelector('.panel-refresh').onclick = () => {
@@ -42,15 +42,16 @@
 
   async function loadArrivals(stopId, list, silent) {
     try {
-      if (!silent) list.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+      if (!silent) list.innerHTML = '<div class="loading"><div class="sk sk-block" style="display:flex;flex-direction:column;gap:0"><div class="sk-dep-row"><div class="sk sk-line" style="width:60px;height:10px;border-radius:3px"></div><div class="sk sk-line-sm" style="width:40px;margin-left:auto;height:8px"></div></div>' + Array(3).fill('<div class="sk-dep-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:35%"></div><div class="sk sk-line" style="width:20%"></div><div class="sk sk-line-sm" style="width:40px"></div></div>').join('') + '<div style="height:6px"></div><div class="sk-dep-row"><div class="sk sk-line" style="width:50px;height:10px;border-radius:3px"></div><div class="sk sk-line-sm" style="width:36px;margin-left:auto;height:8px"></div></div>' + Array(2).fill('<div class="sk-dep-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:30%"></div><div class="sk sk-line" style="width:25%"></div><div class="sk sk-line-sm" style="width:36px"></div></div>').join('') + '</div></div>';
       const arrivals = await Stops.getArrivals(stopId);
+      if (document.getElementById('departures-panel').dataset.stopId !== stopId) return;
       const isScheduled = arrivals.length > 0 && arrivals[0]._scheduled;
       const badge = document.getElementById('departures-panel').querySelector('h3 .live-badge');
       if (badge) {
         badge.textContent = isScheduled ? 'SCHEDULED' : 'LIVE';
         badge.className = isScheduled ? 'sched-badge' : 'live-badge';
       }
-      if (!arrivals.length) { list.innerHTML = '<div class="no-data">No upcoming departures</div>'; return; }
+      if (!arrivals.length) { list.innerHTML = '<div class="no-data">No upcoming departures — check back closer to departure time</div>'; return; }
       const grouped = Stops.groupArrivals(arrivals);
       const allRoutes = [...new Set(arrivals.map(a => a.line).filter(Boolean))];
       const allDirections = [...new Set(arrivals.map(a => a.dirLabel).filter(Boolean))];
@@ -149,7 +150,7 @@
           document.dispatchEvent(new Event('explore-route'));
         });
       });
-    } catch { if (!silent) list.innerHTML = '<div class="no-data">Could not load departures</div>'; }
+    } catch { if (!silent) list.innerHTML = '<div class="no-data">Could not load departures — check your connection and try again</div>'; }
   }
 
   function applyDirFilter(list, dir) {

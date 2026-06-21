@@ -33,10 +33,20 @@
       try {
         window.__statusLines = await Status.fetchAll();
       } catch (e) { window.__statusLines = []; }
-      setInterval(async () => { try { window.__statusLines = await Status.fetchAll(); } catch (e) {} }, 60000);
+      setInterval(async () => { try { if (typeof OfflineManager === 'undefined' || OfflineManager.isOnline()) window.__statusLines = await Status.fetchAll(); } catch (e) {} }, 60000);
 
     // --- Offline detection (using OfflineManager) ---
+    function updateOnlineStatus() {
+      const online = navigator.onLine;
+      const badge = document.getElementById('offline-badge');
+      const banner = document.getElementById('offline-banner');
+      const navBar = document.getElementById('trip-nav-bar');
+      if (badge) badge.style.display = online ? 'none' : '';
+      if (banner) banner.style.display = (online || !navBar || navBar.style.display === 'none') ? 'none' : '';
+      window._lastConnectionCheck = Date.now();
+    }
     if (typeof OfflineManager !== 'undefined') {
+      OfflineManager.setErrorHandler((msg) => { UI.showError(msg); });
       OfflineManager.init();
       OfflineManager.onConnectivityChange((online) => {
         const badge = document.getElementById('offline-badge');
@@ -84,16 +94,8 @@
           }
         }, 1000);
       });
+      updateOnlineStatus();
     } else {
-      function updateOnlineStatus() {
-        const online = navigator.onLine;
-        const badge = document.getElementById('offline-badge');
-        const banner = document.getElementById('offline-banner');
-        const navBar = document.getElementById('trip-nav-bar');
-        if (badge) badge.style.display = online ? 'none' : '';
-        if (banner) banner.style.display = (online || !navBar || navBar.style.display === 'none') ? 'none' : '';
-        window._lastConnectionCheck = Date.now();
-      }
       window.addEventListener('online', updateOnlineStatus);
       window.addEventListener('offline', updateOnlineStatus);
       updateOnlineStatus();
@@ -359,10 +361,13 @@
     let _navHeaderCleanup = null;
     let _gpsRetryCount = 0;
     let _gpsRetryTimer = null;
+    let _gpsFirstFixReceived = false;
+    let _gpsFirstFixTimer = null;
     let recenterBtn = null;
     let followEnabled = true;
 
     function startGPSWatch() {
+      _gpsFirstFixReceived = false;
       let firstFix = true;
       let lastGoodLat = null, lastGoodLon = null;
 
@@ -370,14 +375,15 @@
         (pos) => {
           if (tripWatchId === null) return;
           if (!pos || !pos.coords) return;
+          _gpsFirstFixReceived = true;
+          if (_gpsFirstFixTimer) { clearTimeout(_gpsFirstFixTimer); _gpsFirstFixTimer = null; }
           const { latitude: lat, longitude: lon, speed, heading, accuracy } = pos.coords;
+          console.log('GPS fix:', lat.toFixed(4), lon.toFixed(4), 'acc:', accuracy, 'spd:', speed);
           
           // GPS accuracy filter - skip updates with poor accuracy (underground drift)
-          if (accuracy != null && accuracy > 200) {
-            // Use last known good position for trip progress
-            if (lastGoodLat != null && lastGoodLon != null) {
-              updateTripProgress(lastGoodLat, lastGoodLon, pos);
-            }
+          // Always accept first fix even if poor, so timeline renders & user sees progress
+          if (accuracy != null && accuracy > 200 && lastGoodLat != null && lastGoodLon != null) {
+            updateTripProgress(lastGoodLat, lastGoodLon, pos);
             return;
           }
           
@@ -437,12 +443,14 @@
         },
         (err) => {
           if (tripWatchId === null) return;
+          console.warn('GPS error:', err.code, err.message);
+          if (_gpsFirstFixTimer) { clearTimeout(_gpsFirstFixTimer); _gpsFirstFixTimer = null; }
           _gpsRetryCount++;
           if (_gpsRetryCount >= 3) {
-            UI.showError('Navigation error: ' + err.message);
+            UI.showError('Navigation error: ' + err.message + '. Check location permissions and try again.');
             document.dispatchEvent(new Event('end-trip'));
           } else {
-            UI.showError('Navigation error, retrying... (' + _gpsRetryCount + '/3)');
+            UI.showError('GPS not responding, retrying... (' + _gpsRetryCount + '/3). Ensure location is enabled.');
             clearTimeout(_gpsRetryTimer);
             _gpsRetryTimer = setTimeout(() => {
               if (tripWatchId === null) return;
@@ -471,6 +479,9 @@
       } else { 
         if (_autoEndPaused) { 
           _autoEndPaused = false; 
+          if (tripArrived && _autoEndTimer === null) {
+            _autoEndTimer = setTimeout(() => document.dispatchEvent(new Event('end-trip')), 2000);
+          }
         }
         if (typeof OfflineManager !== 'undefined') OfflineManager.forceCheck(); 
       } 
@@ -510,7 +521,7 @@
     }
 
     document.addEventListener('start-trip', (e) => {
-      const key = e.detail.key;
+      let key = e.detail.key;
       const restore = e.detail.restore || false;
       if (!activeJourneys) return;
       if (!activeJourneys[key] && activeJourneys.all) {
@@ -578,7 +589,7 @@
       const tripEta = document.getElementById('trip-eta');
 
       navBar.style.display = 'block';
-      timeline.innerHTML = '<div style="display:flex;align-items:center;gap:6px;padding:8px 10px"><div class="spinner" style="display:inline-block;width:12px;height:12px;border-width:2px;flex-shrink:0"></div><span>Locating you...</span></div>';
+      timeline.innerHTML = '<div style="display:flex;flex-direction:column;gap:4px;padding:8px 10px"><div class="sk-card-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:50%"></div></div><div class="sk-card-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:65%"></div><div class="sk sk-line-sm" style="width:40px"></div></div><div class="sk-card-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:45%"></div></div></div>';
       recenterBtn.style.display = 'none';
       if (tripEta) tripEta.textContent = '';
       // Show locating message in map title bar too
@@ -622,6 +633,21 @@
       if (allPoints.length > 0) MapView.fitBounds([allPoints]);
 
       tripWatchId = startGPSWatch();
+      if (_gpsFirstFixTimer) clearTimeout(_gpsFirstFixTimer);
+      _gpsFirstFixTimer = setTimeout(() => {
+        if (!_gpsFirstFixReceived && tripWatchId !== null) {
+          timeline.innerHTML = '<div style="display:flex;align-items:center;gap:6px;padding:8px 10px;color:#e32017"><span>⚠️</span><span>GPS not responding. Check location permissions or ensure GPS is enabled.</span></div>';
+          timeline.innerHTML += '<div style="padding:0 10px 8px"><button id="trip-retry-gps" class="btn btn-sm" style="background:#0019a8;color:#fff;border:0;padding:4px 12px;border-radius:20px;cursor:pointer">Retry GPS</button></div>';
+          setTimeout(() => {
+            const retryBtn = document.getElementById('trip-retry-gps');
+            if (retryBtn) retryBtn.onclick = () => {
+              if (tripWatchId !== null) { navigator.geolocation.clearWatch(tripWatchId); tripWatchId = null; }
+              tripWatchId = startGPSWatch();
+              timeline.innerHTML = '<div style="display:flex;flex-direction:column;gap:4px;padding:8px 10px"><div class="sk-card-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:50%"></div></div><div class="sk-card-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:65%"></div><div class="sk sk-line-sm" style="width:40px"></div></div><div class="sk-card-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:45%"></div></div></div>';
+            };
+          }, 0);
+        }
+      }, 20000);
 
       recenterBtn.onclick = () => {
         followEnabled = true;
@@ -665,14 +691,22 @@
       window.addEventListener('beforeunload', saveTripState);
       document.addEventListener('visibilitychange', _onVisibilityChange);
 
-      // Bottom sheet drag (Google Maps style)
+      // Bottom sheet drag (Google Maps style) — uses transform on inner wrapper
       const toggleBtn = document.getElementById('trip-nav-toggle');
       const navHeader = document.getElementById('trip-nav-header');
+      // Create inner wrapper for transform-based animation (avoids layout thrashing)
+      let sheetInner = document.getElementById('trip-nav-inner');
+      if (!sheetInner) {
+        sheetInner = document.createElement('div');
+        sheetInner.id = 'trip-nav-inner';
+        navBar.insertBefore(sheetInner, document.getElementById('trip-nav-body'));
+        sheetInner.appendChild(document.getElementById('trip-nav-body'));
+      }
       const SHEET_COLLAPSED = 56;
       const SHEET_MID_RATIO = 0.45;
       const SHEET_FULL_RATIO = 0.85;
       let sheetState = 'mid';
-      let sheetStartY = 0, sheetStartHeight = 0;
+      let sheetStartY = 0, sheetStartOffset = 0;
       let sheetDragging = false, sheetDragVelocity = 0, sheetLastTime = 0, sheetLastY = 0;
 
       function getSheetTargetHeight(state) {
@@ -687,12 +721,16 @@
         return Math.round(Math.min(maxH, vh * SHEET_FULL_RATIO));
       }
 
+      // Set nav bar to max height once — never changes during drag
+      const _maxSheetH = getSheetTargetHeight('full');
+      navBar.style.height = _maxSheetH + 'px';
+
       function setSheetState(state, animate) {
         sheetState = state;
-        const h = getSheetTargetHeight(state);
-        navBar.style.transition = animate !== false ? 'height 0.35s cubic-bezier(0.4, 0, 0.2, 1)' : 'none';
-        navBar.style.height = h + 'px';
-        navBar.style.transform = '';
+        const targetH = getSheetTargetHeight(state);
+        const offset = _maxSheetH - targetH;
+        sheetInner.style.transition = animate !== false ? 'transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)' : 'none';
+        sheetInner.style.transform = 'translateY(' + offset + 'px)';
         toggleBtn.innerHTML = '<span class="ic" data-ic="' + (state === 'collapsed' ? 'chevron_up' : 'chevron_down') + '"></span>';
         navBar.classList.toggle('collapsed', state === 'collapsed');
       }
@@ -700,13 +738,15 @@
       const onSheetStart = (e) => {
         if (e.button !== undefined && e.button !== 0) return;
         sheetStartY = e.touches ? e.touches[0].clientY : e.clientY;
-        sheetStartHeight = navBar.offsetHeight;
+        const curTransform = sheetInner.style.transform;
+        const match = curTransform && curTransform.match(/translateY\(([-\d.]+)px\)/);
+        sheetStartOffset = match ? parseFloat(match[1]) : 0;
         sheetDragging = true;
         sheetLastTime = Date.now();
         sheetLastY = sheetStartY;
         sheetDragVelocity = 0;
-        navBar.style.transition = 'none';
-        navBar.style.willChange = 'height';
+        sheetInner.style.transition = 'none';
+        sheetInner.style.willChange = 'transform';
         navBar.classList.remove('collapsed');
       };
 
@@ -720,18 +760,19 @@
         if (dt > 0) sheetDragVelocity = (cy - sheetLastY) / dt;
         sheetLastTime = now;
         sheetLastY = cy;
-        const safeBottom = window.visualViewport ? window.visualViewport.offsetTop : 0;
-        const availableH = window.innerHeight - safeBottom;
-        const maxH = Math.min(availableH * SHEET_FULL_RATIO, availableH - 40);
-        const newH = Math.max(SHEET_COLLAPSED, Math.min(maxH, sheetStartHeight - delta));
-        navBar.style.height = newH + 'px';
+        const maxOffset = _maxSheetH - SHEET_COLLAPSED;
+        const offset = Math.max(0, Math.min(maxOffset, sheetStartOffset + delta));
+        sheetInner.style.transform = 'translateY(' + offset + 'px)';
       };
 
       const onSheetEnd = () => {
         if (!sheetDragging) return;
         sheetDragging = false;
-        navBar.style.willChange = '';
-        const curH = navBar.offsetHeight;
+        sheetInner.style.willChange = '';
+        const curTransform = sheetInner.style.transform;
+        const match = curTransform && curTransform.match(/translateY\(([-\d.]+)px\)/);
+        const curOffset = match ? parseFloat(match[1]) : 0;
+        const curH = _maxSheetH - curOffset;
         const vh = window.innerHeight;
         const safeBottom = window.visualViewport ? window.visualViewport.offsetTop : 0;
         const availableH = vh - safeBottom;
@@ -755,6 +796,9 @@
         else setSheetState('collapsed');
       };
 
+      // Init sheet to mid state
+      setSheetState('mid', false);
+
       navHeader.addEventListener('mousedown', onSheetStart);
       navHeader.addEventListener('touchstart', onSheetStart, { passive: true });
       document.addEventListener('mousemove', onSheetMove);
@@ -769,9 +813,6 @@
         { el: document, type: 'touchmove', fn: onSheetMove, opts: { passive: false } },
         { el: document, type: 'touchend', fn: onSheetEnd }
       ];
-
-      // Init sheet to mid state
-      setSheetState('mid', false);
 
       // --- Notification Setup ---
       if ('Notification' in window && Notification.permission === 'default') {
@@ -799,6 +840,7 @@
     document.addEventListener('end-trip', () => {
       if (tripWatchId !== null) { navigator.geolocation.clearWatch(tripWatchId); tripWatchId = null; }
       if (_gpsRetryTimer) { clearTimeout(_gpsRetryTimer); _gpsRetryTimer = null; }
+      if (_gpsFirstFixTimer) { clearTimeout(_gpsFirstFixTimer); _gpsFirstFixTimer = null; }
       _gpsRetryCount = 0;
       if (window._ttlTimer) { clearTimeout(window._ttlTimer); window._ttlTimer = null; }
       window._notifiedAlight = false;
@@ -1032,7 +1074,7 @@
           document.addEventListener('touchend', onEnd);
         };
         resizeHandle.addEventListener('mousedown', onResizeStart);
-        resizeHandle.addEventListener('touchstart', onResizeStart, { passive: true });
+        resizeHandle.addEventListener('touchstart', onResizeStart, { passive: false });
       }
 
       // --- Fullscreen toggle for floating map ---
@@ -1059,11 +1101,10 @@
       if (fsBtn) fsBtn.onclick = (e) => { e.stopPropagation(); goFullscreen(); };
 
       // Override close button to handle trip fullscreen restore
+      // Keep original DOM node to preserve event listeners registered by UI.init
       const closeBtn = document.getElementById('close-map-btn');
       if (closeBtn) {
-        const newCloseBtn = closeBtn.cloneNode(true);
-        closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
-        newCloseBtn.onclick = (e) => {
+        closeBtn.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
           if (overlay.dataset.tripFs) {
@@ -1189,25 +1230,15 @@
       return len;
     }
 
+    let _tlRenderGen = 0;
     function renderTripTimeline(journey, legs, tripLegIdx, lat, lon, distToNextStation, etaStr) {
+      _tlRenderGen++;
+      const _thisGen = _tlRenderGen;
       const container = document.getElementById('trip-timeline');
       if (!container) { return; }
 
-      const currentLeg = legs[tripLegIdx];
+      let currentLeg = legs[tripLegIdx];
       if (!currentLeg) return;
-
-      // Offline caching: cache key based on journey and leg
-      const cacheKey = 'timeline_' + (journey.journeyId || 'unknown') + '_' + tripLegIdx;
-      const isOnline = typeof OfflineManager !== 'undefined' ? OfflineManager.isOnline() : navigator.onLine;
-      
-      // Try to get cached timeline when offline
-      if (!isOnline && typeof OfflineManager !== 'undefined') {
-        const cached = OfflineManager.getCachedResponse(cacheKey);
-        if (cached) {
-          document.getElementById('trip-timeline').innerHTML = cached;
-          return;
-        }
-      }
 
       container.innerHTML = '';
 
@@ -1353,22 +1384,25 @@
             html += '</div></div>';
           }
           html += '</div></div>';
-          setTimeout(function() {
-            var el = document.getElementById(colId);
-            if (el) {
-              el.onclick = function(e) {
-                var toggle = el.querySelector('.tl-col-toggle');
-                if (toggle && !toggle.contains(e.target)) return;
-                var content = el.querySelector('.tl-col-content');
-                var arrow = el.querySelector('.tl-col-arrow');
-                var open = content.style.display !== 'none';
-                content.style.display = open ? 'none' : 'block';
-                arrow.textContent = open ? '▶' : '▼';
-                el.classList.toggle('open', !open);
-                _walkOpen[colKey] = !open;
-              };
-            }
-          }, 0);
+          (function(id, key) {
+            setTimeout(function() {
+              if (window._tlRenderGen !== _thisGen) return;
+              var el = document.getElementById(id);
+              if (el) {
+                el.onclick = function(e) {
+                  var toggle = el.querySelector('.tl-col-toggle');
+                  if (toggle && !toggle.contains(e.target)) return;
+                  var content = el.querySelector('.tl-col-content');
+                  var arrow = el.querySelector('.tl-col-arrow');
+                  var open = content.style.display !== 'none';
+                  content.style.display = open ? 'none' : 'block';
+                  arrow.textContent = open ? '▶' : '▼';
+                  el.classList.toggle('open', !open);
+                  _walkOpen[key] = !open;
+                };
+              }
+            }, 0);
+          })(colId, colKey);
         }
       }
 
@@ -1512,6 +1546,7 @@
               html += '</div></div>';
               (function(id, ri) {
                 setTimeout(function() {
+                  if (window._tlRenderGen !== _thisGen) return;
                   var el = document.getElementById(id);
                   if (el) {
                     el.onclick = function(e) {
@@ -1560,15 +1595,11 @@
 
       container.innerHTML = html;
 
-      // Cache timeline for offline use
-      if (isOnline && typeof OfflineManager !== 'undefined') {
-        OfflineManager.cacheResponse(cacheKey, html);
-      }
-
       // Auto-scroll to current station
       const currentEl = container.querySelector('.tl-station.current');
       if (currentEl) {
         setTimeout(() => {
+          if (window._tlRenderGen !== _thisGen) return;
           currentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 100);
       }
@@ -1577,6 +1608,7 @@
       // Use the visible scroll parent (#trip-nav-body) and viewport rects so this
       // works reliably across Safari on iOS where offsets can be tricky.
       setTimeout(() => {
+        if (window._tlRenderGen !== _thisGen) return;
         try {
           const footer = container.querySelector('.tl-footer');
           const scrollParent = document.getElementById('trip-nav-body') || container.parentElement;
@@ -1780,14 +1812,18 @@
         }
         const isOnline = typeof OfflineManager !== 'undefined' ? OfflineManager.isOnline() : navigator.onLine;
         const gpsAccurate = (gpsPos && gpsPos.coords && gpsPos.coords.accuracy != null && gpsPos.coords.accuracy <= 100);
-        if (minDist > 200 && isOnline && gpsAccurate) {
+        if (minDist > 200 && gpsAccurate) {
           if (tripDeviationStart === null) tripDeviationStart = now;
           else if (now - tripDeviationStart > 15000) {
             tripDeviationStart = null;
-            tripRerouting = true;
-            triggerReroute(lat, lon);
+            if (isOnline) {
+              tripRerouting = true;
+              triggerReroute(lat, lon);
+            } else {
+              showRerouteNotification('⚠️ Route deviation detected. Go online to reroute.');
+            }
           }
-        } else if (minDist <= 200 || !isOnline || !gpsAccurate) {
+        } else if (minDist <= 200 || !gpsAccurate) {
           tripDeviationStart = null;
         }
       }
@@ -1841,33 +1877,37 @@
       const eta = new Date(Date.now() + remainingSecs * 1000);
       const etaStr = eta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-      // --- Connection Alert Check (every 30s, offline-safe) ---
+      // --- Connection Alert Check (every 30s) ---
       const isOnline = typeof OfflineManager !== 'undefined' ? OfflineManager.isOnline() : navigator.onLine;
-      if (!tripArrived && tripLegIndex < legs.length - 1 && now - (window._lastConnectionCheck || 0) > 30000 && isOnline) {
+      if (!tripArrived && tripLegIndex < legs.length - 1 && now - (window._lastConnectionCheck || 0) > 30000) {
         window._lastConnectionCheck = now;
-        const nextLeg = legs[tripLegIndex + 1];
-        if (nextLeg && nextLeg.from && nextLeg.from.id && nextLeg.mode !== 'walking' && ['bus','tube','dlr','overground','elizabeth-line','national-rail','tram'].includes(nextLeg.mode)) {
-          (async () => {
-            try {
-              const arrs = await Stops.getArrivals(nextLeg.from.id);
-              const routeName = nextLeg.routeName;
-              if (!routeName) return;
-              const matched = arrs.filter(a => (a.lineId === routeName || a.line === routeName) && (!nextLeg.direction || (a.dirLabel || '').toLowerCase().includes(nextLeg.direction.toLowerCase())));
-              const scheduledDep = nextLeg.departureTime ? new Date(nextLeg.departureTime) : null;
-              if (scheduledDep && matched.length) {
-                const actualDep = matched[0].expected ? new Date(matched[0].expected) : null;
-                if (actualDep) {
-                  const delaySec = (actualDep - scheduledDep) / 1000;
-                  _tripDelaySecs = delaySec;
-                  if (delaySec > 120) {
-                    showRerouteNotification('⚠️ Next ' + (routeName || nextLeg.modeName) + ' at ' + (nextLeg.from.name || 'stop') + ' delayed by ' + Math.round(delaySec/60) + ' min');
+        if (!isOnline) {
+          showRerouteNotification('⚠️ Offline — arrival times may be stale');
+        } else {
+          const nextLeg = legs[tripLegIndex + 1];
+          if (nextLeg && nextLeg.from && nextLeg.from.id && nextLeg.mode !== 'walking' && ['bus','tube','dlr','overground','elizabeth-line','national-rail','tram'].includes(nextLeg.mode)) {
+            (async () => {
+              try {
+                const arrs = await Stops.getArrivals(nextLeg.from.id);
+                const routeName = nextLeg.routeName;
+                if (!routeName) return;
+                const matched = arrs.filter(a => (a.lineId === routeName || a.line === routeName) && (!nextLeg.direction || (a.dirLabel || '').toLowerCase().includes(nextLeg.direction.toLowerCase())));
+                const scheduledDep = nextLeg.departureTime ? new Date(nextLeg.departureTime) : null;
+                if (scheduledDep && matched.length) {
+                  const actualDep = matched[0].expected ? new Date(matched[0].expected) : null;
+                  if (actualDep) {
+                    const delaySec = (actualDep - scheduledDep) / 1000;
+                    _tripDelaySecs = delaySec;
+                    if (delaySec > 120) {
+                      showRerouteNotification('⚠️ Next ' + (routeName || nextLeg.modeName) + ' at ' + (nextLeg.from.name || 'stop') + ' delayed by ' + Math.round(delaySec/60) + ' min');
+                    }
                   }
+                } else if (scheduledDep && arrs.length > 0 && !matched.length && (now - scheduledDep.getTime()) > -60000) {
+                  showRerouteNotification('⚠️ Next ' + (routeName || nextLeg.modeName) + ' at ' + (nextLeg.from.name || 'stop') + ' may be cancelled');
                 }
-              } else if (scheduledDep && arrs.length > 0 && !matched.length && (now - scheduledDep.getTime()) > -60000) {
-                showRerouteNotification('⚠️ Next ' + (routeName || nextLeg.modeName) + ' at ' + (nextLeg.from.name || 'stop') + ' may be cancelled');
-              }
-            } catch {}
-          })();
+              } catch {}
+            })();
+          }
         }
       }
 
@@ -1922,7 +1962,7 @@
       const progressFill = document.getElementById('trip-progress-fill');
       const tripEta = document.getElementById('trip-eta');
       if (progressText) progressText.textContent = (tripArrived ? '100' : totalProgress) + '%';
-      if (progressFill) progressFill.style.width = (tripArrived ? '100' : totalProgress) + '%';
+      if (progressFill) progressFill.style.transform = 'scaleX(' + ((tripArrived ? 100 : totalProgress) / 100) + ')';
       if (tripEta) tripEta.textContent = tripArrived ? '✅ Arrived' : 'ETA ' + etaStr;
 
       // --- Google Maps-Style Timeline ---
@@ -1961,35 +2001,39 @@
       setTimeout(() => { if (note.parentNode) note.remove(); }, 4200);
     }
 
+    function _reEnableRerouteBtn() {
+      const btn = document.getElementById('trip-reroute-btn');
+      if (btn) { btn.disabled = false; tripRerouting = false; }
+    }
+
     async function triggerReroute(fromLat, fromLon, userConfirmed) {
       const isOnline = typeof OfflineManager !== 'undefined' ? OfflineManager.isOnline() : navigator.onLine;
-      if (!isOnline) { tripRerouting = false; showRerouteNotification('Cannot reroute while offline'); return; }
-      if (!activeJourneys || !tripActiveKey) { tripRerouting = false; return; }
+      if (!isOnline) { tripRerouting = false; _reEnableRerouteBtn(); showRerouteNotification('Cannot reroute while offline'); return; }
+      if (!activeJourneys || !tripActiveKey) { _reEnableRerouteBtn(); return; }
       const oldJourney = activeJourneys[tripActiveKey];
-      if (!oldJourney || !oldJourney.legs.length) { tripRerouting = false; return; }
+      if (!oldJourney || !oldJourney.legs.length) { _reEnableRerouteBtn(); return; }
       
       if (!userConfirmed) {
-        // Show confirmation dialog
         const confirmed = confirm('Route deviation detected. Recalculate route? This will restart from your current location.');
         if (!confirmed) {
-          tripRerouting = false;
+          _reEnableRerouteBtn();
           showRerouteNotification('Reroute cancelled');
           return;
         }
       }
       
       const destLeg = oldJourney.legs[oldJourney.legs.length - 1];
-      if (!destLeg || !destLeg.to || destLeg.to.lat == null) { tripRerouting = false; return; }
+      if (!destLeg || !destLeg.to || destLeg.to.lat == null) { _reEnableRerouteBtn(); return; }
       const from = { label: 'Current Location', lat: fromLat, lon: fromLon };
       const to = { label: destLeg.to.name || 'Destination', lat: destLeg.to.lat, lon: destLeg.to.lon };
       let modes = [];
       try { modes = UI.getActiveModes ? UI.getActiveModes() : []; } catch {}
       try {
         const result = await Router.plan(from, to, { modes, timeMode: 'now' });
-        if (!result || !result.fastest) { tripRerouting = false; return; }
+        if (!result || !result.fastest) { _reEnableRerouteBtn(); return; }
         if (result.fastest.duration > oldJourney.duration * 2 && oldJourney.duration > 5) {
           showRerouteNotification('Staying on current route');
-          tripRerouting = false; return;
+          _reEnableRerouteBtn(); return;
         }
         activeJourneys[tripActiveKey] = result.fastest;
         Router.enrichJourneyPaths(result.fastest).catch(() => {});
@@ -2007,8 +2051,9 @@
         showRerouteNotification('Route recalculated');
       } catch (e) {
         console.warn('Reroute failed:', e);
+        UI.showError('Could not recalculate route. Try again.');
       }
-      tripRerouting = false;
+      _reEnableRerouteBtn();
     }
 
     // --- Clear ---
@@ -2131,7 +2176,8 @@
         const q = input.value.trim();
         if (q.length < 2) { suggestionsEl.innerHTML = ''; suggestionsEl.classList.remove('active'); return; }
         timeout = setTimeout(async () => {
-          const results = await Geocoder.search(q);
+          let results;
+          try { results = await Geocoder.search(q); } catch { results = []; }
           if (results.length) {
             suggestionsEl.innerHTML = results.map(r =>
                `<div class="suggestion-item" data-label="${escapeAttr(r.label)}" data-lat="${r.lat}" data-lon="${r.lon}" data-type="${escapeAttr(r.type)}">
@@ -2162,7 +2208,8 @@
           suggestionsEl.classList.remove('active');
           const q = input.value.trim();
           if (!q) return;
-          const results = await Geocoder.search(q);
+          let results;
+          try { results = await Geocoder.search(q); } catch { results = []; }
           if (results.length) {
             document.dispatchEvent(new CustomEvent('bike-search-loc', { detail: { lat: results[0].lat, lon: results[0].lon, label: results[0].label } }));
           }
@@ -2255,7 +2302,8 @@
           if (q.length < 2) { suggestionsEl.innerHTML = ''; suggestionsEl.classList.remove('active'); return; }
           autocompleteTimeout = setTimeout(async () => {
             if (abort.signal.aborted) return;
-            const results = await Geocoder.search(q);
+            let results;
+            try { results = await Geocoder.search(q); } catch { results = []; }
             if (abort.signal.aborted) return;
             if (results.length) {
               suggestionsEl.innerHTML = results.map(r =>
@@ -2287,7 +2335,8 @@
             suggestionsEl.classList.remove('active');
             const q = input.value.trim();
             if (!q) return;
-            const results = await Geocoder.search(q);
+            let results;
+            try { results = await Geocoder.search(q); } catch { results = []; }
             if (results.length) {
               doResolve({ lat: results[0].lat, lon: results[0].lon, label: results[0].label });
             } else {
@@ -2608,7 +2657,8 @@ function start3DMap() {
         const q = input.value.trim();
         if (q.length < 2) { suggestionsEl.innerHTML = ''; suggestionsEl.classList.remove('active'); return; }
         timeout = setTimeout(async () => {
-          const results = await Geocoder.search(q);
+          let results;
+          try { results = await Geocoder.search(q); } catch { results = []; }
           if (results.length) {
             suggestionsEl.innerHTML = results.map(r =>
                `<div class="suggestion-item" data-label="${escapeAttr(r.label)}" data-lat="${r.lat}" data-lon="${r.lon}">
@@ -2619,7 +2669,7 @@ function start3DMap() {
             ).join('');
             suggestionsEl.classList.add('active');
           } else {
-            suggestionsEl.innerHTML = '<div class="suggestion-item" style="color:#999;cursor:default">No results</div>';
+            suggestionsEl.innerHTML = '<div class="suggestion-item" style="color:#999;cursor:default">No matching locations — try a different search term</div>';
             suggestionsEl.classList.add('active');
           }
         }, 200);
@@ -2642,7 +2692,8 @@ function start3DMap() {
           suggestionsEl.classList.remove('active');
           const q = input.value.trim();
           if (!q) return;
-          const results = await Geocoder.search(q);
+          let results;
+          try { results = await Geocoder.search(q); } catch { results = []; }
           if (results.length) {
             const r = results[0];
             UI.showNearbyStops(r.lat, r.lon);

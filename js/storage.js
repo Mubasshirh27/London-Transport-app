@@ -8,7 +8,7 @@ const Store = (() => {
   function get(key) {
     try { return JSON.parse(localStorage.getItem(key)) ?? null; } catch { return null; }
   }
-  function set(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+  function set(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
 
   function getFavorites() { return get(KEYS.favorites) || []; }
   function saveFavorites(favs) { set(KEYS.favorites, favs); }

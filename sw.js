@@ -117,7 +117,26 @@ self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys => Promise.all(keys.map(k => {
       if (k !== CACHE && k !== API_CACHE && k !== TILE_CACHE) return caches.delete(k);
-    }))).then(() => self.clients.claim())
+    }))).then(() => {
+      // Evict stale API cache entries (older than 24h)
+      caches.open(API_CACHE).then(cache => {
+        cache.keys().then(requests => {
+          const now = Date.now();
+          requests.forEach(req => {
+            cache.match(req).then(resp => {
+              if (resp) {
+                const date = resp.headers.get('date');
+                if (date) {
+                  const age = now - new Date(date).getTime();
+                  if (age > 86400000) cache.delete(req);
+                }
+              }
+            });
+          });
+        });
+      });
+      return self.clients.claim();
+    })
   );
 });
 

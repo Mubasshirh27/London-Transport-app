@@ -12,8 +12,8 @@
 
   UI.showNearbyStops = async function(lat, lon, preserveScroll) {
     const panel = document.getElementById('nearby-panel');
-    if (liveTracking && panel.style.display === 'none') return;
-    panel.style.display = 'flex';
+    if (liveTracking && !panel.classList.contains('open')) return;
+    panel.classList.add('open');
     const h3 = panel.querySelector('h3');
     h3.innerHTML = liveTracking
       ? '📍 Nearby Stops <span class="live-badge">LIVE</span>'
@@ -21,12 +21,12 @@
     const list = document.getElementById('nearby-list');
     const savedScroll = preserveScroll ? list.scrollTop : 0;
     if (!preserveScroll) {
-      list.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+      list.innerHTML = '<div class="loading"><div style="display:flex;flex-direction:column;gap:0;padding:4px 0">' + Array(6).fill('<div class="stop-item"><div class="sk sk-circle" style="width:12px;height:12px;margin:0 6px 0 0;flex-shrink:0"></div><div class="sk sk-line" style="flex:1;height:10px"></div><div class="sk sk-line-sm" style="width:32px;height:8px;flex-shrink:0"></div></div>').join('') + '</div></div>';
     }
     try {
       const stops = await Stops.getNearby(lat, lon);
       if (!stops.length) {
-        if (!preserveScroll) list.innerHTML = '<div class="no-data">No stops nearby</div>';
+        if (!preserveScroll) list.innerHTML = '<div class="no-data">No stops nearby — try searching for a place or moving the map</div>';
         return;
       }
       const modeOrder = { bus: 0, tube: 1, 'national-rail': 2, 'elizabeth-line': 3, dlr: 4, overground: 5, tram: 6 };
@@ -50,9 +50,9 @@
       }
       MapView.showStopMarkers(stops);
     } catch(e) {
-      if (!preserveScroll) list.innerHTML = '<div class="no-data">Could not load stops</div>';
+        if (!preserveScroll) list.innerHTML = '<div class="no-data">Could not load stops — check your connection and try again</div>';
     }
-    panel.querySelector('.panel-close').onclick = function() { panel.style.display = 'none'; };
+    panel.querySelector('.panel-close').onclick = function() { panel.classList.remove('open'); };
   };
 
   UI.setLiveTracking = function(on) {

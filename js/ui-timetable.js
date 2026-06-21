@@ -37,8 +37,8 @@
     // Pass 3: Generic schedule that doesn't reference the opposite day-type
     for (const s of schedules) {
       const name = (s.name || '').toLowerCase();
-      const hasWeekday = weekdayRefs.some(v => name.includes(v)) || weekdayPatterns.some(p => name.includes(p));
-      const hasWeekend = weekendRefs.some(v => name.includes(v));
+      const hasWeekday = weekdayRefs.some(v => name.includes(v)) || weekdayPatterns.some(p => name.includes(p)) || name.includes('weekday');
+      const hasWeekend = weekendRefs.some(v => name.includes(v)) || name.includes('weekend');
       if (isWeekend && !hasWeekday) return s;  // weekend-safe: no weekday refs
       if (!isWeekend && !hasWeekend) return s; // weekday-safe: no weekend refs
     }
@@ -383,7 +383,7 @@
     }
 
     if (!liveHtml && !schedHtml) {
-      list.innerHTML = dateBarHtml + '<div class="no-data">No timetable data for ' + formatDate(date) + '</div>' +
+      list.innerHTML = dateBarHtml + '<div class="no-data">No services on this date — try another day or check back closer to departure</div>' +
         '<div class="tt-actions"><button class="btn-secondary tt-back-btn">\u2190 Back to Live</button></div>';
       setTimeout(() => { const pb = panel.querySelector('.panel-body'); if (pb) pb.scrollTop = 0; }, 50);
       return;
@@ -415,7 +415,7 @@
     panel.dataset.stopName = stopName;
     panel.dataset.stopId = stopId;
     const list = document.getElementById('departures-list');
-    list.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    list.innerHTML = '<div class="loading"><div style="display:flex;flex-direction:column;gap:0;padding:0"><div class="sk sk-line" style="width:80px;height:8px;border-radius:3px;margin:8px 12px"></div><div style="margin:0 8px 8px;display:flex;gap:3px;flex-wrap:wrap">' + Array(8).fill('<div class="sk sk-block" style="width:52px;height:24px;border-radius:4px"></div>').join('') + '</div></div></div>';
 
     if (!date) date = new Date();
 
@@ -441,7 +441,7 @@
     try { lineStops = await Api.getLineStopPoints(lineId); } catch {}
 
     // Cache for date bar navigation
-    _ttCache = {
+    _ttCache = window.__ttCache = {
       timetableResponses,
       arrivals,
       stopId,
@@ -469,7 +469,7 @@
     panel.dataset.stopName = stopName;
     panel.dataset.stopId = stopId;
     const list = document.getElementById('departures-list');
-    list.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+    list.innerHTML = '<div class="loading"><div style="display:flex;flex-direction:column;gap:4px;padding:4px 8px">' + Array(4).fill('<div class="sk-card-row"><div class="sk sk-circle" style="width:22px;height:22px"></div><div class="sk sk-line" style="width:50%"></div><div class="sk sk-line-sm" style="width:30%"></div><div class="sk sk-line-sm" style="width:20px"></div></div>').join('') + '</div></div>';
     panel.querySelector('h3').innerHTML = '📋 ' + esc(stopName) + ' Timetable <span class="stop-code">' + esc(stopId) + '</span>';
     let routes = [], liveArrivals = [], routeModeMap = {};
     try {
@@ -492,7 +492,7 @@
       } catch (e) { console.log('[StopTimetable] Stop routes API error:', e); }
     }
     if (!routes.length) {
-      list.innerHTML = '<div class="no-data">No routes found for this stop</div><div style="padding:8px 12px;text-align:center"><button class="btn-secondary tt-back-btn">\u2190 Back to Live</button></div>';
+      list.innerHTML = '<div class="no-data">No routes calling at this stop — try a different stop</div><div style="padding:8px 12px;text-align:center"><button class="btn-secondary tt-back-btn">\u2190 Back to Live</button></div>';
       return;
     }
     function _guessMode(lineName) {
@@ -550,7 +550,8 @@ document.addEventListener('click', (e) => {
   if (mapBtn) {
     e.preventDefault();
     const lineId = mapBtn.dataset.line;
-    const rawStops = _ttCache && _ttCache.lineStops;
+    const ttCacheData = window.__ttCache;
+    const rawStops = ttCacheData && ttCacheData.lineStops;
     if (!rawStops || !Array.isArray(rawStops) || rawStops.length < 2) return;
     const valid = rawStops.filter(s => s.lat != null && s.lon != null && !isNaN(s.lat) && !isNaN(s.lon));
     if (valid.length < 2) return;

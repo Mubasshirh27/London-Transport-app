@@ -51,6 +51,10 @@ const Icon = (() => {
     forward: S('<line x1="3" y1="10" x2="17" y2="10"/><polyline points="12,5 17,10 12,15"/>'),
     user: S('<circle cx="10" cy="6" r="3.5"/><path d="M3 18c0-4 3.1-7 7-7s7 3 7 7"/>'),
     fullscreen: S('<path d="M8 3H3v5M12 3h5v5M8 17H3v-5M12 17h5v-5"/>'),
+    wifi_off: S('<path d="M3.5 16.5a9 9 0 0113 0"/><path d="M6.5 13.5a6 6 0 017 0"/><path d="M9.5 10.5a3 3 0 011 0"/><line x1="2" y1="2" x2="20" y2="20"/>'),
+    gps_fixed: S('<circle cx="10" cy="10" r="7"/><circle cx="10" cy="10" r="2" fill="currentColor" stroke="none"/><line x1="10" y1="1" x2="10" y2="5"/><line x1="10" y1="15" x2="10" y2="19"/><line x1="1" y1="10" x2="5" y2="10"/><line x1="15" y1="10" x2="19" y2="10"/>'),
+    river: S('<path d="M4 16c0 2 3 3 6 3s6-1 6-3"/><path d="M4 13c0 2 3 3 6 3s6-1 6-3"/><path d="M4 10c0 2 3 3 6 3s6-1 6-3"/><circle cx="10" cy="5" r="4" fill="currentColor" stroke="none"/>'),
+    nationalrail: S('<path d="M5 10h10M3 10l7-5 7 5M3 10l7 5 7-5"/><circle cx="5" cy="16" r="1.5" fill="currentColor" stroke="none"/><circle cx="15" cy="16" r="1.5" fill="currentColor" stroke="none"/>'),
   };
 
   function inject(target) {
@@ -65,6 +69,16 @@ const Icon = (() => {
   }
 
   let observer = null;
+  let pendingInject = false;
+
+  function scheduleInject() {
+    if (pendingInject) return;
+    pendingInject = true;
+    requestAnimationFrame(() => {
+      pendingInject = false;
+      inject();
+    });
+  }
 
   return {
     get(name) {
@@ -83,7 +97,16 @@ const Icon = (() => {
     init() {
       inject();
       if (window.MutationObserver && !observer) {
-        observer = new MutationObserver(() => inject());
+        observer = new MutationObserver((mutations) => {
+          let hasNewNodes = false;
+          for (const m of mutations) {
+            if (m.addedNodes.length) {
+              hasNewNodes = true;
+              break;
+            }
+          }
+          if (hasNewNodes) scheduleInject();
+        });
         observer.observe(document.body, { childList: true, subtree: true });
       }
     }

@@ -140,7 +140,7 @@
             suggestionsEl.innerHTML = stops.length ? stops.slice(0, 15).map(s => {
               const modes = (s.modes || []).map(m => Stops.getModeIcon(m)).join('');
               return '<div class="suggestion-item" data-id="'+s.id+'" data-name="'+(s.commonName || s.name)+'" data-lat="'+s.lat+'" data-lon="'+s.lon+'"><span class="sug-type">🚏</span><span class="sug-label">'+(s.commonName || s.name)+'</span><span class="sug-sub">'+modes+'</span></div>';
-            }).join('') : '<div class="suggestion-item" style="cursor:default;color:var(--text2)">No stops found</div>';
+            }).join('') : '<div class="suggestion-item" style="cursor:default;color:var(--text2)">No stops found — try a different stop name or number</div>';
             suggestionsEl.classList.toggle('active', suggestionsEl.children.length > 0);
           } catch { suggestionsEl.innerHTML = ''; suggestionsEl.classList.remove('active'); }
         }, 200);
@@ -196,7 +196,7 @@
   /* Results */
   UI.showResults = function(journeys) {
     if (!journeys || !journeys.fastest) { UI.showError('No routes found. Try different locations or modes.'); return; }
-    const { fastest, cheapest, balanced } = journeys;
+        const { fastest, cheapest, balanced, fewestTransfers, leastWalking } = journeys;
 
     function hasDisruption(journey) {
       return journey && journey.legs && journey.legs.some(l => l.disruption);
@@ -244,7 +244,7 @@
             (walkDist ? '<span>🚶 '+walkDist+'</span>' : '')+
           '</div>'+
         '</div>'+
-        '<div class="jc-steps" style="display:none">'+
+        '<div class="jc-steps">'+
           journey.legs.map((leg, i) => {
             const depTime = leg.departureTime ? new Date(leg.departureTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
             const arrTime = leg.arrivalTime ? new Date(leg.arrivalTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
@@ -317,7 +317,7 @@
             '<span class="jc-fare">Free</span>'+
           '</div>'+
           '<div class="jc-body"><div class="jc-modes"><span class="jc-mode-text">'+(distStr ? distStr : (isWalk ? 'Walk the whole way' : 'Cycle the whole way'))+'</span></div></div>'+
-          '<div class="jc-steps" style="display:none">'+
+          '<div class="jc-steps">'+
             fastest.legs.map((leg, li) => {
               const walkD = isWalk ? (leg.detail || leg.instruction || '') : '';
               const ic = isWalk ? '🚶' : '🚲';
@@ -377,7 +377,7 @@
         '<div class="jc-body">'+
           '<div class="jc-modes"><span class="jc-mode-text">'+(distStr ? distStr : 'Walk the whole way')+'</span></div>'+
         '</div>'+
-        '<div class="jc-steps" style="display:none">'+
+        '<div class="jc-steps">'+
           j.legs.map((leg, li) => {
             const walkD = leg.detail || leg.instruction || '';
             let stepHtml = '<div class="step"><div class="step-icon" style="background:#666">🚶</div><div class="step-detail"><div class="step-header">Walk <span class="step-dur">'+leg.duration+' min</span></div>'+(walkD ? '<div class="step-instruction">'+esc(walkD)+'</div>' : '');
@@ -452,6 +452,7 @@
       '</div></div>';
     }
     resultsPanel.innerHTML = html;
+    resultsPanel.classList.add('stagger-in');
 
     const startBtn = document.getElementById('trip-start-btn');
     const endBtn = document.getElementById('trip-end-btn');
@@ -459,7 +460,7 @@
     if (endBtn) endBtn.style.display = 'none';
 
     const resultsCloseBtn = document.getElementById('results-close-btn');
-    if (resultsCloseBtn) resultsCloseBtn.onclick = () => { resultsPanel.innerHTML = '<div class="panel-placeholder">Enter a destination and plan your journey</div>'; };
+    if (resultsCloseBtn) resultsCloseBtn.onclick = () => { resultsPanel.innerHTML = '<div class="panel-placeholder">Search above to plan your journey</div>'; };
 
     startBtn.onclick = () => document.dispatchEvent(new CustomEvent('start-trip', { detail: { key: resultsPanel.querySelector('.journey-card.active')?.dataset?.journeyIndex || 'fastest' } }));
     endBtn.onclick = () => document.dispatchEvent(new Event('end-trip'));
@@ -477,10 +478,10 @@
       card.querySelector('.jc-header').addEventListener('click', () => {
         const wasActive = card.classList.contains('active');
         resultsPanel.querySelectorAll('.journey-card').forEach(c2 => {
-          if (c2 !== card) { c2.classList.remove('active'); const s2 = c2.querySelector('.jc-steps'); if (s2) s2.style.display = 'none'; }
+          if (c2 !== card) { c2.classList.remove('active'); const s2 = c2.querySelector('.jc-steps'); if (s2) s2.classList.remove('open'); }
         });
         card.classList.toggle('active');
-        card.querySelector('.jc-steps').style.display = wasActive ? 'none' : 'block';
+        card.querySelector('.jc-steps').classList.toggle('open', !wasActive);
         if (!wasActive) document.dispatchEvent(new CustomEvent('show-route', { detail: jKey }));
       });
 
@@ -549,8 +550,8 @@
     if (UI._cleanupDeparturesTimer) UI._cleanupDeparturesTimer();
     if (departuresTimer) clearInterval(departuresTimer);
     departuresTimer = null;
-    document.getElementById('nearby-panel').style.display = 'none';
-    document.getElementById('departures-panel').style.display = 'none';
+    document.getElementById('nearby-panel').classList.remove('open');
+    document.getElementById('departures-panel').classList.remove('open');
   };
 
   /* Map pin mode */

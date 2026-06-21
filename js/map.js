@@ -277,9 +277,9 @@ const MapView = (() => {
           });
           if (arrivals.length > 8) departuresHtml += `<div style="font-size:9px;color:#888;padding:2px 0">+${arrivals.length - 8} more departures</div>`;
         } else {
-          departuresHtml = `<div style="font-size:10px;color:#888;padding:6px 0;text-align:center">No arrivals at this time</div>`;
+          departuresHtml = `<div style="font-size:10px;color:#888;padding:6px 0;text-align:center">No arrivals at this time — try a different stop</div>`;
         }
-      } catch { departuresHtml = `<div style="font-size:10px;color:#888;padding:6px 0;text-align:center">Error loading departures</div>`; }
+      } catch { departuresHtml = `<div style="font-size:10px;color:#888;padding:6px 0;text-align:center">Could not load departures — check connection</div>`; }
       const btnHtml = `<button class="stop-popup-btn" data-id="${stopId}" data-name="${stopName}" data-lat="${lat}" data-lon="${lon}">📋 View Full Timetable</button>`;
       const finalHtml = `<div class="stop-popup"><div class="stop-popup-header"><strong>🚏 ${stopName}</strong>${accBadge}</div>${modeStr ? `<div class="stop-popup-modes">${modeStr} ${distance}</div>` : ''}${extraLine}${routeTags ? `<div class="stop-popup-routes">${routeTags}</div>` : ''}<div class="popup-departures-list">${departuresHtml}</div>${btnHtml}</div>`;
       if (popup) popup.setContent(finalHtml);
@@ -348,10 +348,10 @@ const MapView = (() => {
               document.dispatchEvent(new CustomEvent('open-departures', { detail: { id: b.dataset.sid, name: b.dataset.sname, lat: +b.dataset.slat, lon: +b.dataset.slon } }));
             });
           } else {
-            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong>${accBadge} <span class="stop-code">${s.id}</span></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">No arrivals at this time</div>`;
+            popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong>${accBadge} <span class="stop-code">${s.id}</span></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">No arrivals at this time — try a different stop</div>`;
           }
         } catch {
-          popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong>${accBadge} <span class="stop-code">${s.id}</span></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">Error loading departures</div>`;
+          popContent.innerHTML = `<div class="stop-popup-header"><strong>🚏 ${s.name}</strong>${accBadge} <span class="stop-code">${s.id}</span></div><div style="font-size:10px;color:#888;padding:6px 0;text-align:center">Could not load departures — check connection</div>`;
         }
       })();
       m.on('click', () => {
@@ -401,10 +401,8 @@ const MapView = (() => {
         <button class="stop-popup-btn" style="margin-top:6px">🚶 Route here</button>`;
       m.bindPopup(popContent, { className:'stop-detail-popup', maxWidth:240 });
       m.on('click', () => {
-        // Draw route immediately on marker click
-        document.dispatchEvent(new CustomEvent('bike-route-to', { detail: { lat: b.lat, lon: b.lon, name: b.name } }));
+        m.openPopup();
         setTimeout(() => {
-          m.openPopup();
           const btn = m.getPopup()?.getElement()?.querySelector('.stop-popup-btn');
           if (btn) btn.onclick = () => {
             document.dispatchEvent(new CustomEvent('bike-route-to', { detail: { lat: b.lat, lon: b.lon, name: b.name } }));
@@ -532,15 +530,15 @@ const MapView = (() => {
   function onMoveEnd(cb) {
     offMoveEnd();
     moveEndHandler = () => { followMode = false; if (cb) cb(map.getCenter()); };
-    map.on('dragstart', moveEndHandler);
-    map.on('zoomstart', moveEndHandler);
-    map.on('rotatestart', moveEndHandler);
+    map.on('dragend', moveEndHandler);
+    map.on('zoomend', moveEndHandler);
+    map.on('rotateend', moveEndHandler);
   }
   function offMoveEnd() {
     if (moveEndHandler) {
-      map.off('dragstart', moveEndHandler);
-      map.off('zoomstart', moveEndHandler);
-      map.off('rotatestart', moveEndHandler);
+      map.off('dragend', moveEndHandler);
+      map.off('zoomend', moveEndHandler);
+      map.off('rotateend', moveEndHandler);
       moveEndHandler = null;
     }
   }

@@ -101,7 +101,7 @@ const Status = (() => {
   }
 
   function render(lines) {
-    if (!lines || !lines.length) return '<div class="no-data">Loading status...</div>';
+    if (!lines || !lines.length) return '<div style="padding:10px"><div class="sk-card-row" style="margin-bottom:10px"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:120px"></div></div>' + Array(6).fill('<div style="margin-bottom:6px;border:1px solid rgba(200,150,102,.12);border-radius:8px;padding:8px 12px"><div class="sk-card-row"><div class="sk sk-circle" style="width:8px;height:8px"></div><div class="sk sk-line" style="width:50%"></div><div class="sk sk-line-sm" style="width:60px;margin-left:auto"></div></div></div>').join('') + '</div>';
     const overall = getOverall(lines);
     const busLines = lines.filter(l => l.mode === 'bus');
     const busWorst = getOverall(busLines);

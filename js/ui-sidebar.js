@@ -215,7 +215,7 @@
       if (!count) {
         const d = document.createElement('div');
         d.className = 'bus-hint';
-        d.textContent = 'No routes found';
+        d.textContent = 'No matching routes — try a different route number or name';
         results.appendChild(d);
       }
     });

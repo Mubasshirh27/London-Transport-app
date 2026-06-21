@@ -6,7 +6,8 @@ const Api = (() => {
   function _withOfflineQueue(fn, meta) {
     if (typeof OfflineManager !== 'undefined' && !OfflineManager.isOnline()) {
       if (meta) OfflineManager.savePendingRequest(meta);
-      return OfflineManager.queueRequest(fn);
+      const dedupKey = meta ? meta.endpoint + '_' + JSON.stringify(meta.params || {}) : null;
+      return OfflineManager.queueRequest(fn, dedupKey);
     }
     return fn();
   }

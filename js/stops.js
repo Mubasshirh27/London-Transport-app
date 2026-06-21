@@ -202,36 +202,13 @@ const Stops = (() => {
     return ids;
   }
 
+  // --- Mode icons/colors now from shared Modes module ---
   function getModeIcon(mode) {
-    const icons = {
-      bus: typeof Icon !== 'undefined' ? Icon.get('bus') : '🚌',
-      tube: typeof Icon !== 'undefined' ? Icon.get('tube') : '🚇',
-      dlr: typeof Icon !== 'undefined' ? Icon.get('dlr') : '🚈',
-      overground: typeof Icon !== 'undefined' ? Icon.get('overground') : '🚆',
-      'elizabeth-line': typeof Icon !== 'undefined' ? Icon.get('elizabeth') : '🚄',
-      'national-rail': typeof Icon !== 'undefined' ? Icon.get('train') : '🚂',
-      tram: typeof Icon !== 'undefined' ? Icon.get('tram') : '🚊',
-      cableCar: typeof Icon !== 'undefined' ? Icon.get('cable_car') : '🚡',
-      riverBus: typeof Icon !== 'undefined' ? Icon.get('bus') : '⛴️',
-      walking: typeof Icon !== 'undefined' ? Icon.get('walk') : '🚶'
-    };
-    return icons[mode] || (typeof Icon !== 'undefined' ? Icon.get('bus') : '🚏');
+    return Modes.getIcon(mode);
   }
 
   function getModeColor(mode) {
-    const colors = {
-      bus: '#e32017',
-      tube: '#0019a8',
-      dlr: '#00a94f',
-      overground: '#f86c00',
-      'elizabeth-line': '#6950a0',
-      'national-rail': '#003688',
-      tram: '#66cc00',
-      cableCar: '#e21836',
-      riverBus: '#00a4a7',
-      walking: '#666666'
-    };
-    return colors[mode] || '#333';
+    return Modes.getColor(mode);
   }
 
   const _accCache = new Map();
