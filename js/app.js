@@ -60,6 +60,7 @@
           sync.title = online ? 'Synced' : 'Offline';
         }
         window._lastConnectionCheck = Date.now();
+        if (online) _gpsRetryCount = 0;
       });
       OfflineManager.onSync(() => {
         const sync = document.getElementById('sync-indicator');
@@ -446,18 +447,21 @@
           console.warn('GPS error:', err.code, err.message);
           if (_gpsFirstFixTimer) { clearTimeout(_gpsFirstFixTimer); _gpsFirstFixTimer = null; }
           _gpsRetryCount++;
-          if (_gpsRetryCount >= 3) {
+          const isOffline = typeof OfflineManager !== 'undefined' ? !OfflineManager.isOnline() : !navigator.onLine;
+          if (_gpsRetryCount >= 3 && !isOffline) {
             UI.showError('Navigation error: ' + err.message + '. Check location permissions and try again.');
             document.dispatchEvent(new Event('end-trip'));
+          } else if (_gpsRetryCount >= 3 && isOffline) {
+            UI.showError('GPS unavailable — continuing trip with last known position.');
           } else {
             UI.showError('GPS not responding, retrying... (' + _gpsRetryCount + '/3). Ensure location is enabled.');
-            clearTimeout(_gpsRetryTimer);
-            _gpsRetryTimer = setTimeout(() => {
-              if (tripWatchId === null) return;
-              navigator.geolocation.clearWatch(tripWatchId);
-              tripWatchId = startGPSWatch();
-            }, _gpsRetryCount * 2000);
           }
+          clearTimeout(_gpsRetryTimer);
+          _gpsRetryTimer = setTimeout(() => {
+            if (tripWatchId === null) return;
+            navigator.geolocation.clearWatch(tripWatchId);
+            tripWatchId = startGPSWatch();
+          }, _gpsRetryCount * 2000);
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
       );
@@ -588,11 +592,9 @@
       recenterBtn = document.getElementById('trip-recenter-btn');
       const tripEta = document.getElementById('trip-eta');
 
-      navBar.style.display = 'block';
-      timeline.innerHTML = '<div style="display:flex;flex-direction:column;gap:4px;padding:8px 10px"><div class="sk-card-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:50%"></div></div><div class="sk-card-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:65%"></div><div class="sk sk-line-sm" style="width:40px"></div></div><div class="sk-card-row"><div class="sk sk-circle" style="width:10px;height:10px"></div><div class="sk sk-line" style="width:45%"></div></div></div>';
+      navBar.style.display = 'flex';
       recenterBtn.style.display = 'none';
       if (tripEta) tripEta.textContent = '';
-      // Show locating message in map title bar too
       const mapTitleText = document.querySelector('.map-title-text');
       if (mapTitleText) mapTitleText.innerHTML = '<span class="ic" data-ic="map"></span> <span class="map-title-trip-info"><span class="leg-preview">Acquiring GPS...</span></span>';
 
@@ -631,6 +633,11 @@
       const allPoints = [];
       journey.legs.forEach(l => { const p = l.path || []; p.forEach(pt => allPoints.push(pt)); });
       if (allPoints.length > 0) MapView.fitBounds([allPoints]);
+
+      const initLat = (firstLeg && firstLeg.from && firstLeg.from.lat) || 51.5;
+      const initLon = (firstLeg && firstLeg.from && firstLeg.from.lon) || -0.12;
+      _lastLat = initLat; _lastLon = initLon;
+      renderTripTimeline(activeJourneys[tripActiveKey], activeJourneys[tripActiveKey].legs, tripLegIndex, initLat, initLon, null, '');
 
       tripWatchId = startGPSWatch();
       if (_gpsFirstFixTimer) clearTimeout(_gpsFirstFixTimer);
@@ -705,9 +712,10 @@
       const SHEET_COLLAPSED = 56;
       const SHEET_MID_RATIO = 0.45;
       const SHEET_FULL_RATIO = 0.85;
-      let sheetState = 'mid';
+      let sheetState = 'full';
       let sheetStartY = 0, sheetStartOffset = 0;
       let sheetDragging = false, sheetDragVelocity = 0, sheetLastTime = 0, sheetLastY = 0;
+      let sheetWasDragged = false;
 
       function getSheetTargetHeight(state) {
         const vh = window.innerHeight;
@@ -742,6 +750,7 @@
         const match = curTransform && curTransform.match(/translateY\(([-\d.]+)px\)/);
         sheetStartOffset = match ? parseFloat(match[1]) : 0;
         sheetDragging = true;
+        sheetWasDragged = false;
         sheetLastTime = Date.now();
         sheetLastY = sheetStartY;
         sheetDragVelocity = 0;
@@ -753,6 +762,7 @@
       const onSheetMove = (e) => {
         if (!sheetDragging) return;
         e.preventDefault();
+        sheetWasDragged = true;
         const cy = e.touches ? e.touches[0].clientY : e.clientY;
         const delta = cy - sheetStartY;
         const now = Date.now();
@@ -779,25 +789,32 @@
         const midH = Math.round(availableH * SHEET_MID_RATIO);
         const fullH = Math.round(Math.min(availableH * SHEET_FULL_RATIO, availableH - 40));
         let target;
-        if (curH < SHEET_COLLAPSED + (midH - SHEET_COLLAPSED) * 0.3 || (sheetDragVelocity > 0.5 && curH < midH)) {
+        if (curH < midH || (sheetDragVelocity > 0.3 && curH < fullH)) {
           target = 'collapsed';
-        } else if (curH < midH + (fullH - midH) * 0.4 || (sheetDragVelocity > 0.3 && curH < fullH)) {
-          target = 'mid';
         } else {
           target = 'full';
         }
         setSheetState(target, true);
       };
 
+      function toggleSheet() {
+        if (sheetState === 'collapsed') setSheetState('full');
+        else setSheetState('collapsed');
+      }
+
       toggleBtn.onclick = (e) => {
         e.stopPropagation();
-        if (sheetState === 'collapsed') setSheetState('mid');
-        else if (sheetState === 'mid') setSheetState('full');
-        else setSheetState('collapsed');
+        toggleSheet();
       };
 
-      // Init sheet to mid state
-      setSheetState('mid', false);
+      navHeader.onclick = (e) => {
+        if (sheetWasDragged) { sheetWasDragged = false; return; }
+        if (e.target.closest('#trip-nav-toggle, #trip-reroute-btn, #trip-recenter-btn, #trip-cancel-btn')) return;
+        toggleSheet();
+      };
+
+      // Init sheet to full state
+      setSheetState('full', false);
 
       navHeader.addEventListener('mousedown', onSheetStart);
       navHeader.addEventListener('touchstart', onSheetStart, { passive: true });
@@ -1237,6 +1254,24 @@
       const container = document.getElementById('trip-timeline');
       if (!container) { return; }
 
+      if (!container.dataset.tlDelegate) {
+        container.dataset.tlDelegate = '1';
+        container.addEventListener('click', function(e) {
+          var stops = e.target.closest('.tl-col-stops');
+          if (!stops) return;
+          var toggle = stops.querySelector('.tl-col-toggle');
+          if (toggle && !toggle.contains(e.target)) return;
+          var content = stops.querySelector('.tl-col-content');
+          var arrow = stops.querySelector('.tl-col-arrow');
+          var key = stops.dataset.colKey;
+          var open = content.style.display !== 'none';
+          content.style.display = open ? 'none' : 'block';
+          if (arrow) arrow.textContent = open ? '▶' : '▼';
+          stops.classList.toggle('open', !open);
+          if (key) _walkOpen[key] = !open;
+        });
+      }
+
       let currentLeg = legs[tripLegIdx];
       if (!currentLeg) return;
 
@@ -1368,10 +1403,9 @@
           globalStationIdx++;
         }
         if (colStops.length > 0) {
-          const colId = 'tl-col-stops-' + tripLegIdx;
           const colKey = '_col_' + tripLegIdx;
           const colOpen = !!_walkOpen[colKey];
-          html += '<div class="tl-col-stops' + (colOpen ? ' open' : '') + '" id="' + colId + '">';
+          html += '<div class="tl-col-stops' + (colOpen ? ' open' : '') + '" data-col-key="' + colKey + '">';
           html += '<div class="tl-col-toggle">';
           html += '<span class="tl-col-arrow">' + (colOpen ? '▼' : '▶') + '</span>';
           html += '<span class="tl-col-summary">ride ' + colStops.length + ' stop' + (colStops.length > 1 ? 's' : '') + '</span>';
@@ -1384,25 +1418,6 @@
             html += '</div></div>';
           }
           html += '</div></div>';
-          (function(id, key) {
-            setTimeout(function() {
-              if (window._tlRenderGen !== _thisGen) return;
-              var el = document.getElementById(id);
-              if (el) {
-                el.onclick = function(e) {
-                  var toggle = el.querySelector('.tl-col-toggle');
-                  if (toggle && !toggle.contains(e.target)) return;
-                  var content = el.querySelector('.tl-col-content');
-                  var arrow = el.querySelector('.tl-col-arrow');
-                  var open = content.style.display !== 'none';
-                  content.style.display = open ? 'none' : 'block';
-                  arrow.textContent = open ? '▶' : '▼';
-                  el.classList.toggle('open', !open);
-                  _walkOpen[key] = !open;
-                };
-              }
-            }, 0);
-          })(colId, colKey);
         }
       }
 
@@ -1429,7 +1444,13 @@
 
       // --- Current walking leg summary ---
       if (currentLeg.mode === 'walking') {
-        const walkDist = currentLeg.path && currentLeg.path.length >= 2 ? Math.round(getPathLength(currentLeg.path)) : 0;
+        const totalDist = currentLeg.path && currentLeg.path.length >= 2 ? getPathLength(currentLeg.path) : 0;
+        let remainingDist = totalDist;
+        if (totalDist > 0 && lat != null && lon != null && currentLeg.path && currentLeg.path.length >= 2) {
+          const progress = getProgressAlongPath(currentLeg.path, lat, lon);
+          if (progress > 0) remainingDist = Math.max(0, (1 - Math.min(progress, 1)) * totalDist);
+        }
+        const walkDist = Math.round(remainingDist);
         const walkDur = currentLeg.duration || 0;
         const walkDistStr = walkDist >= 1000 ? (walkDist / 1000).toFixed(1) + 'km' : walkDist + 'm';
         html += '<div class="tl-walking">';
@@ -1529,9 +1550,9 @@
               }
             }
             if (remColStops.length > 0) {
-              const remColId = 'tl-rem-stops-' + ri;
-              const remColOpen = !!_walkOpen['_remc_' + ri];
-              html += '<div class="tl-col-stops' + (remColOpen ? ' open' : '') + '" id="' + remColId + '">';
+              const remColKey = '_remc_' + ri;
+              const remColOpen = !!_walkOpen[remColKey];
+              html += '<div class="tl-col-stops' + (remColOpen ? ' open' : '') + '" data-col-key="' + remColKey + '">';
               html += '<div class="tl-col-toggle">';
               html += '<span class="tl-col-arrow">' + (remColOpen ? '▼' : '▶') + '</span>';
               html += '<span class="tl-col-summary">ride ' + remColStops.length + ' stop' + (remColStops.length > 1 ? 's' : '') + '</span>';
@@ -1544,25 +1565,6 @@
                 html += '</div></div>';
               }
               html += '</div></div>';
-              (function(id, ri) {
-                setTimeout(function() {
-                  if (window._tlRenderGen !== _thisGen) return;
-                  var el = document.getElementById(id);
-                  if (el) {
-                    el.onclick = function(e) {
-                      var toggle = el.querySelector('.tl-col-toggle');
-                      if (toggle && !toggle.contains(e.target)) return;
-                      var content = el.querySelector('.tl-col-content');
-                      var arrow = el.querySelector('.tl-col-arrow');
-                      var open = content.style.display !== 'none';
-                      content.style.display = open ? 'none' : 'block';
-                      arrow.textContent = open ? '▶' : '▼';
-                      el.classList.toggle('open', !open);
-                      _walkOpen['_remc_' + ri] = !open;
-                    };
-                  }
-                }, 0);
-              })(remColId, ri);
             }
           }
 
