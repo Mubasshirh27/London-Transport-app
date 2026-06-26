@@ -3,7 +3,6 @@
 
   let fromInput, toInput, resultsPanel;
   let departuresTimer = null;
-  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
 
   const journeyAutocomplete = {
     init() {
@@ -30,7 +29,7 @@
           if (last5.length) {
             el.innerHTML += '<div class="sug-header">🕐 Recent searches</div>';
             el.innerHTML += last5.map(r =>
-              '<div class="suggestion-item recent-item" data-label="'+esc(r.label)+'" data-lat="'+r.lat+'" data-lon="'+r.lon+'" data-type="'+(r.type||'')+'"><span class="sug-type">🕐</span><span class="sug-label">'+esc(r.label)+'</span><span class="sug-sub">Recent</span></div>'
+              '<div class="suggestion-item recent-item" data-label="'+Helpers.esc(r.label)+'" data-lat="'+r.lat+'" data-lon="'+r.lon+'" data-type="'+(r.type||'')+'"><span class="sug-type">🕐</span><span class="sug-label">'+Helpers.esc(r.label)+'</span><span class="sug-sub">Recent</span></div>'
             ).join('');
             el.innerHTML += '<div class="suggestion-item clear-recent-btn" style="border-bottom:none;color:var(--text2);font-size:10px;justify-content:center;border-top:1px solid #333">✕ Clear recent searches</div>';
           }
@@ -41,16 +40,16 @@
         el.innerHTML = '';
         if (favs.length) {
           el.innerHTML += favs.map(f =>
-            '<div class="suggestion-item fav-item" data-label="'+esc(f.label)+'" data-lat="'+f.lat+'" data-lon="'+f.lon+'" data-type="fav"><span class="sug-type">⭐</span><span class="sug-label">'+esc(f.label)+'</span><span class="sug-sub">Saved place</span></div>'
+            '<div class="suggestion-item fav-item" data-label="'+Helpers.esc(f.label)+'" data-lat="'+f.lat+'" data-lon="'+f.lon+'" data-type="fav"><span class="sug-type">⭐</span><span class="sug-label">'+Helpers.esc(f.label)+'</span><span class="sug-sub">Saved place</span></div>'
           ).join('');
         }
         if (recents.length) {
           el.innerHTML += recents.map(r =>
-            '<div class="suggestion-item recent-item" data-label="'+esc(r.label)+'" data-lat="'+r.lat+'" data-lon="'+r.lon+'" data-type="'+(r.type||'')+'"><span class="sug-type">🕐</span><span class="sug-label">'+esc(r.label)+'</span><span class="sug-sub">Recent</span></div>'
+            '<div class="suggestion-item recent-item" data-label="'+Helpers.esc(r.label)+'" data-lat="'+r.lat+'" data-lon="'+r.lon+'" data-type="'+(r.type||'')+'"><span class="sug-type">🕐</span><span class="sug-label">'+Helpers.esc(r.label)+'</span><span class="sug-sub">Recent</span></div>'
           ).join('');
         }
         el.innerHTML += geoResults.map(r =>
-          '<div class="suggestion-item" data-label="'+esc(r.label)+'" data-lat="'+r.lat+'" data-lon="'+r.lon+'" data-type="'+r.type+'"><span class="sug-type">'+(r.type === 'stop' ? '🚏' : '📍')+'</span><span class="sug-label">'+esc(r.label)+'</span><span class="sug-sub">'+esc(r.fullLabel || '').substring(0, 100)+'</span></div>'
+          '<div class="suggestion-item" data-label="'+Helpers.esc(r.label)+'" data-lat="'+r.lat+'" data-lon="'+r.lon+'" data-type="'+r.type+'"><span class="sug-type">'+(r.type === 'stop' ? '🚏' : '📍')+'</span><span class="sug-label">'+Helpers.esc(r.label)+'</span><span class="sug-sub">'+Helpers.esc(r.fullLabel || '').substring(0, 100)+'</span></div>'
         ).join('');
         el.classList.toggle('active', el.children.length > 0);
       }
@@ -226,19 +225,19 @@
       const disruptCls = hasDisruption(journey) ? journey.legs.find(l => l.disruption).disruption.cls : '';
       const disruptText = hasDisruption(journey) ? journey.legs.find(l => l.disruption).disruption.text : '';
 
-      return '<div class="journey-card '+(isDefault ? 'active' : '')+'" data-journey-index="'+key+'">'+
+      return '<div class="journey-card '+(isDefault ? 'active' : '')+'" data-journey-index="'+key+'" style="--card-color:'+color+'">'+
         '<div class="jc-header" style="border-left-color:'+color+'">'+
           '<span class="jc-badge" style="background:'+color+'">'+icon+'</span>'+
           '<span class="jc-label">'+label+'</span>'+
           '<span class="jc-time">'+durStr+'</span>'+
-          (disruptText ? '<span class="jc-disrupt '+disruptCls+'" title="'+esc(disruptText)+'">⚠️</span>' : '')+
-          '<span class="jc-fare" '+(fareTitle ? 'title="'+esc(fareTitle)+'" style="cursor:help"' : '')+'>'+fareStr+'</span>'+
+          (disruptText ? '<span class="jc-disrupt '+disruptCls+'" title="'+Helpers.esc(disruptText)+'">⚠️</span>' : '')+
+          '<span class="jc-fare" '+(fareTitle ? 'title="'+Helpers.esc(fareTitle)+'" style="cursor:help"' : '')+'>'+fareStr+'</span>'+
         '</div>'+
         '<div class="jc-body">'+
           '<div class="jc-times">'+start+' \u2192 '+end+'</div>'+
           '<div class="jc-modes">'+legIcons+' <span class="jc-mode-text">'+legNames+'</span></div>'+
-          (disruptText ? '<div class="jc-disrupt-msg '+disruptCls+'">⚠️ '+esc(disruptText)+'</div>' : '')+
-          (fareTitle ? '<div class="jc-fare-detail">'+esc(fareTitle)+'</div>' : '')+
+          (disruptText ? '<div class="jc-disrupt-msg '+disruptCls+'">⚠️ '+Helpers.esc(disruptText)+'</div>' : '')+
+          (fareTitle ? '<div class="jc-fare-detail">'+Helpers.esc(fareTitle)+'</div>' : '')+
           '<div class="jc-meta">'+
             '<span>'+journey.transfers+' transfer'+(journey.transfers !== 1 ? 's' : '')+'</span>'+
             (walkDist ? '<span>🚶 '+walkDist+'</span>' : '')+
@@ -250,18 +249,18 @@
             const arrTime = leg.arrivalTime ? new Date(leg.arrivalTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
             const timeStr = depTime && arrTime ? depTime+' \u2192 '+arrTime : '';
             const dirStr = leg.direction ? (leg.direction.startsWith('towards') ? leg.direction : 'towards '+leg.direction) : '';
-            const locStr = leg.from && leg.to && leg.mode !== 'walking' ? '<span class="step-loc">'+esc(leg.from.name)+' \u2192 '+esc(leg.to.name)+'</span>' : '';
+            const locStr = leg.from && leg.to && leg.mode !== 'walking' ? '<span class="step-loc">'+Helpers.esc(leg.from.name)+' \u2192 '+Helpers.esc(leg.to.name)+'</span>' : '';
             const stopCount = leg.stops && leg.stops.length ? leg.stops.length+' stop'+(leg.stops.length !== 1 ? 's' : '') : '';
             const platStr = leg.platformName ? 'Platform '+leg.platformName : '';
             const walkDetail = leg.mode === 'walking' && leg.detail ? leg.detail : '';
-            const disruptMsg = leg.disruption ? '<div class="step-disrupt '+leg.disruption.cls+'">⚠️ '+esc(leg.disruption.text)+'</div>' : '';
+            const disruptMsg = leg.disruption ? '<div class="step-disrupt '+leg.disruption.cls+'">⚠️ '+Helpers.esc(leg.disruption.text)+'</div>' : '';
             const parts = ['<div class="step">'+
               '<div class="step-icon" style="background:'+Router.getModeColor(leg.mode)+'">'+Router.getModeIcon(leg.mode)+'</div>'+
               '<div class="step-detail">'+
-                '<div class="step-header">'+(leg.mode === 'walking' ? 'Walk' : leg.modeName+' '+(leg.routeName || ''))+' '+(dirStr ? '<span class="step-dir">'+esc(dirStr)+'</span>' : '')+' <span class="step-dur">'+leg.duration+' min</span></div>'+
+                '<div class="step-header">'+(leg.mode === 'walking' ? 'Walk' : leg.modeName+' '+(leg.routeName || ''))+' '+(dirStr ? '<span class="step-dir">'+Helpers.esc(dirStr)+'</span>' : '')+' <span class="step-dur">'+leg.duration+' min</span></div>'+
                 (locStr ? '<div class="step-loc-row">'+locStr+'</div>' : '')+
-                (walkDetail ? '<div class="step-instruction">'+esc(walkDetail)+'</div>' : '')+
-                (leg.instruction && leg.mode !== 'walking' ? '<div class="step-instruction">'+esc(leg.instruction)+'</div>' : '')+
+                (walkDetail ? '<div class="step-instruction">'+Helpers.esc(walkDetail)+'</div>' : '')+
+                (leg.instruction && leg.mode !== 'walking' ? '<div class="step-instruction">'+Helpers.esc(leg.instruction)+'</div>' : '')+
                 (disruptMsg)+
                 '<div class="step-meta">'+
                   (timeStr ? '<span>'+timeStr+'</span>' : '')+
@@ -309,7 +308,7 @@
         const mins = durMins % 60;
         const durStr = hrs > 0 ? hrs+'h '+mins+'m' : mins+' min';
         const distStr = fastest.legs[0] && fastest.legs[0].instruction ? fastest.legs[0].instruction : '';
-        html += '<div class="journey-card active" data-journey-index="fastest">'+
+        html += '<div class="journey-card active" data-journey-index="fastest" style="--card-color:'+(isWalk ? '#666' : '#fcbb03')+'">'+
           '<div class="jc-header" style="border-left-color:'+(isWalk ? '#666' : '#fcbb03')+'">'+
             '<span class="jc-badge" style="background:'+(isWalk ? '#666' : '#fcbb03')+'">'+(isWalk ? '🚶' : '🚲')+'</span>'+
             '<span class="jc-label">'+(isWalk ? 'Walking' : 'Cycling')+'</span>'+
@@ -321,10 +320,10 @@
             fastest.legs.map((leg, li) => {
               const walkD = isWalk ? (leg.detail || leg.instruction || '') : '';
               const ic = isWalk ? '🚶' : '🚲';
-              let stepHtml = '<div class="step"><div class="step-icon" style="background:'+(isWalk ? '#666' : '#fcbb03')+'">'+ic+'</div><div class="step-detail"><div class="step-header">'+(isWalk ? 'Walk' : 'Cycle')+' <span class="step-dur">'+leg.duration+' min</span></div>'+(walkD ? '<div class="step-instruction">'+esc(walkD)+'</div>' : '');
+              let stepHtml = '<div class="step"><div class="step-icon" style="background:'+(isWalk ? '#666' : '#fcbb03')+'">'+ic+'</div><div class="step-detail"><div class="step-header">'+(isWalk ? 'Walk' : 'Cycle')+' <span class="step-dur">'+leg.duration+' min</span></div>'+(walkD ? '<div class="step-instruction">'+Helpers.esc(walkD)+'</div>' : '');
               if (isWalk && leg.walkSteps && leg.walkSteps.length) {
                 stepHtml += '<div class="walk-steps">' + leg.walkSteps.map(s =>
-                  '<div class="walk-step"><span class="walk-step-dir">'+(s.modifier==='turn-left'?'⬅':s.modifier==='turn-right'?'➡':s.modifier==='uturn'?'↩':'⬆')+'</span><span class="walk-step-text">'+esc(s.instruction||'Walk')+'</span><span class="walk-step-dist">'+Math.round(s.distance)+'m</span></div>'
+                  '<div class="walk-step"><span class="walk-step-dir">'+(s.modifier==='turn-left'?'⬅':s.modifier==='turn-right'?'➡':s.modifier==='uturn'?'↩':'⬆')+'</span><span class="walk-step-text">'+Helpers.esc(s.instruction||'Walk')+'</span><span class="walk-step-dist">'+Math.round(s.distance)+'m</span></div>'
                 ).join('') + '</div>';
               }
               stepHtml += '</div></div>';
@@ -367,7 +366,7 @@
       const mins = durMins % 60;
       const durStr = hrs > 0 ? hrs+'h '+mins+'m' : mins+' min';
       const distStr = j.legs[0] && j.legs[0].instruction ? j.legs[0].instruction : '';
-      html += '<div class="journey-card" data-journey-index="walking">'+
+      html += '<div class="journey-card" data-journey-index="walking" style="--card-color:#666">'+
         '<div class="jc-header" style="border-left-color:#666">'+
           '<span class="jc-badge" style="background:#666">🚶</span>'+
           '<span class="jc-label">Walking</span>'+
@@ -380,10 +379,10 @@
         '<div class="jc-steps">'+
           j.legs.map((leg, li) => {
             const walkD = leg.detail || leg.instruction || '';
-            let stepHtml = '<div class="step"><div class="step-icon" style="background:#666">🚶</div><div class="step-detail"><div class="step-header">Walk <span class="step-dur">'+leg.duration+' min</span></div>'+(walkD ? '<div class="step-instruction">'+esc(walkD)+'</div>' : '');
+            let stepHtml = '<div class="step"><div class="step-icon" style="background:#666">🚶</div><div class="step-detail"><div class="step-header">Walk <span class="step-dur">'+leg.duration+' min</span></div>'+(walkD ? '<div class="step-instruction">'+Helpers.esc(walkD)+'</div>' : '');
             if (leg.walkSteps && leg.walkSteps.length) {
               stepHtml += '<div class="walk-steps">' + leg.walkSteps.map(s =>
-                '<div class="walk-step"><span class="walk-step-dir">'+(s.modifier==='turn-left'?'⬅':s.modifier==='turn-right'?'➡':s.modifier==='uturn'?'↩':'⬆')+'</span><span class="walk-step-text">'+esc(s.instruction||'Walk')+'</span><span class="walk-step-dist">'+Math.round(s.distance)+'m</span></div>'
+                '<div class="walk-step"><span class="walk-step-dir">'+(s.modifier==='turn-left'?'⬅':s.modifier==='turn-right'?'➡':s.modifier==='uturn'?'↩':'⬆')+'</span><span class="walk-step-text">'+Helpers.esc(s.instruction||'Walk')+'</span><span class="walk-step-dist">'+Math.round(s.distance)+'m</span></div>'
               ).join('') + '</div>';
             }
             stepHtml += '</div></div>';
@@ -408,7 +407,7 @@
           const legIcons = j.legs.map(l => Router.getModeIcon(l.mode)).join('');
           const legNames = j.legs.map(l => l.modeName).join(', ');
           const walkStr = j.walkDuration > 0 ? '🚶 '+j.walkDuration+'min' : '';
-          return '<div class="journey-card" data-journey-index="' + key + '">'+
+          return '<div class="journey-card" data-journey-index="' + key + '" style="--card-color:#555">'+
             '<div class="jc-header" style="border-left-color:#555">'+
               '<span class="jc-label"># ' + (i + 1) + '</span>'+
               '<span class="jc-time">' + durStr + '</span>'+
@@ -425,18 +424,18 @@
                 const arrTime2 = leg.arrivalTime ? new Date(leg.arrivalTime).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '';
                 const timeStr2 = depTime2 && arrTime2 ? depTime2+' → '+arrTime2 : '';
                 const dirStr2 = leg.direction ? (leg.direction.startsWith('towards') ? leg.direction : 'towards '+leg.direction) : '';
-                const locStr2 = leg.from && leg.to && leg.mode !== 'walking' ? '<span class="step-loc">'+esc(leg.from.name)+' → '+esc(leg.to.name)+'</span>' : '';
+                const locStr2 = leg.from && leg.to && leg.mode !== 'walking' ? '<span class="step-loc">'+Helpers.esc(leg.from.name)+' → '+Helpers.esc(leg.to.name)+'</span>' : '';
                 const platStr2 = leg.platformName ? 'Platform '+leg.platformName : '';
                 const walkDetail2 = leg.mode === 'walking' && leg.detail ? leg.detail : '';
                 const stopCount2 = leg.stops && leg.stops.length ? leg.stops.length+' stops' : '';
-                const disrupt2 = leg.disruption ? '<div class="step-disrupt '+leg.disruption.cls+'">⚠️ '+esc(leg.disruption.text)+'</div>' : '';
+                const disrupt2 = leg.disruption ? '<div class="step-disrupt '+leg.disruption.cls+'">⚠️ '+Helpers.esc(leg.disruption.text)+'</div>' : '';
                 return '<div class="step" data-leg="'+li+'">'+
                   '<div class="step-icon" style="background:'+Router.getModeColor(leg.mode)+'">'+Router.getModeIcon(leg.mode)+'</div>'+
                   '<div class="step-detail">'+
-                    '<div class="step-header">'+(leg.mode === 'walking' ? 'Walk' : leg.modeName+' '+(leg.routeName || ''))+' '+(dirStr2 ? '<span class="step-dir">'+esc(dirStr2)+'</span>' : '')+' <span class="step-dur">'+leg.duration+' min</span></div>'+
+                    '<div class="step-header">'+(leg.mode === 'walking' ? 'Walk' : leg.modeName+' '+(leg.routeName || ''))+' '+(dirStr2 ? '<span class="step-dir">'+Helpers.esc(dirStr2)+'</span>' : '')+' <span class="step-dur">'+leg.duration+' min</span></div>'+
                     (locStr2 ? '<div class="step-loc-row">'+locStr2+'</div>' : '')+
-                    (walkDetail2 ? '<div class="step-instruction">'+esc(walkDetail2)+'</div>' : '')+
-                    (leg.instruction && leg.mode !== 'walking' ? '<div class="step-instruction">'+esc(leg.instruction)+'</div>' : '')+
+                    (walkDetail2 ? '<div class="step-instruction">'+Helpers.esc(walkDetail2)+'</div>' : '')+
+                    (leg.instruction && leg.mode !== 'walking' ? '<div class="step-instruction">'+Helpers.esc(leg.instruction)+'</div>' : '')+
                     disrupt2+
                     '<div class="step-meta">'+
                       (timeStr2 ? '<span>'+timeStr2+'</span>' : '')+
@@ -456,14 +455,8 @@
 
     const startBtn = document.getElementById('trip-start-btn');
     const endBtn = document.getElementById('trip-end-btn');
-    if (startBtn) startBtn.style.display = 'inline-block';
-    if (endBtn) endBtn.style.display = 'none';
-
-    const resultsCloseBtn = document.getElementById('results-close-btn');
-    if (resultsCloseBtn) resultsCloseBtn.onclick = () => { resultsPanel.innerHTML = '<div class="panel-placeholder">Search above to plan your journey</div>'; };
-
-    startBtn.onclick = () => document.dispatchEvent(new CustomEvent('start-trip', { detail: { key: resultsPanel.querySelector('.journey-card.active')?.dataset?.journeyIndex || 'fastest' } }));
-    endBtn.onclick = () => document.dispatchEvent(new Event('end-trip'));
+    if (startBtn) { startBtn.style.display = 'inline-block'; startBtn.onclick = () => document.dispatchEvent(new CustomEvent('start-trip', { detail: { key: resultsPanel.querySelector('.journey-card.active')?.dataset?.journeyIndex || 'fastest' } })); }
+    if (endBtn) { endBtn.style.display = 'none'; endBtn.onclick = () => document.dispatchEvent(new Event('end-trip')); }
 
     function getJourneyByKey(k) {
       if (k === 'walking' && journeys.walkingJourney) return journeys.walkingJourney;
@@ -550,6 +543,7 @@
     if (UI._cleanupDeparturesTimer) UI._cleanupDeparturesTimer();
     if (departuresTimer) clearInterval(departuresTimer);
     departuresTimer = null;
+    if (UI._clearDeparturesTimer) UI._clearDeparturesTimer();
     document.getElementById('nearby-panel').classList.remove('open');
     document.getElementById('departures-panel').classList.remove('open');
   };

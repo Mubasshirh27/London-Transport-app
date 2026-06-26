@@ -2,9 +2,6 @@ const Status = (() => {
   let cached = null;
   let cacheTime = 0;
 
-  function esc(str) {
-    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-  }
 
   function severityCls(desc) {
     const d = (desc || '').toLowerCase();
@@ -81,7 +78,7 @@ const Status = (() => {
     const id = 's-' + modeFilter.replace(/[^a-z0-9-]/g, '');
     return `
       <div class="status-accordion">
-        <div class="status-accordion-header" data-target="${id}">
+        <div class="status-accordion-header ${worst.cls}" data-target="${id}">
           <span class="status-bullet ${worst.cls}"></span>
           <span class="status-name">${MODE_GROUPS[modeFilter] || modeFilter}</span>
           <span class="status-text ${worst.cls}">${worst.text}</span>
@@ -91,10 +88,10 @@ const Status = (() => {
               ${filtered.map(l => `
             <div class="status-line">
               <span class="status-bullet" style="background:${l.color}"></span>
-              <span class="status-name">${esc(l.name)}</span>
-              <span class="status-text ${l.statusCls}">${esc(l.statusText)}</span>
+              <span class="status-name">${Helpers.esc(l.name)}</span>
+              <span class="status-text ${l.statusCls}">${Helpers.esc(l.statusText)}</span>
             </div>
-            ${l.reason ? `<div class="status-reason">${esc(l.reason)}</div>` : ''}
+            ${l.reason ? `<div class="status-reason">${Helpers.esc(l.reason)}</div>` : ''}
           `).join('')}
         </div>
       </div>`;
@@ -116,7 +113,7 @@ const Status = (() => {
       </div>
       <div class="status-categories">
         <div class="status-accordion">
-          <div class="status-accordion-header" data-target="status-trains">
+          <div class="status-accordion-header ${trainWorst.cls}" data-target="status-trains">
             <span class="status-bullet ${trainWorst.cls}"></span>
             <span class="status-name">Trains</span>
             <span class="status-text ${trainWorst.cls}">${trainWorst.text}</span>
@@ -127,7 +124,7 @@ const Status = (() => {
           </div>
         </div>
         <div class="status-accordion">
-          <div class="status-accordion-header" data-target="status-buses">
+          <div class="status-accordion-header ${busWorst.cls}" data-target="status-buses">
             <span class="status-bullet ${busWorst.cls}"></span>
             <span class="status-name">Buses</span>
             <span class="status-text ${busWorst.cls}">${busWorst.text}</span>
@@ -140,10 +137,10 @@ const Status = (() => {
               ${busLines.map(l => `
                 <div class="status-line" data-bus="${l.name.toLowerCase()}">
                   <span class="status-bullet" style="background:${l.color}"></span>
-                  <span class="status-name">${esc(l.name)}</span>
-                  <span class="status-text ${l.statusCls}">${esc(l.statusText)}</span>
+                  <span class="status-name">${Helpers.esc(l.name)}</span>
+                  <span class="status-text ${l.statusCls}">${Helpers.esc(l.statusText)}</span>
                 </div>
-                ${l.reason ? `<div class="status-reason" data-bus="${l.name.toLowerCase()}">${esc(l.reason)}</div>` : ''}
+                ${l.reason ? `<div class="status-reason" data-bus="${l.name.toLowerCase()}">${Helpers.esc(l.reason)}</div>` : ''}
               `).join('')}
             </div>
           </div>
@@ -155,7 +152,7 @@ const Status = (() => {
     if (!disruptions || !disruptions.length) return '';
     return `
       <div class="status-accordion disruption-section">
-        <div class="status-accordion-header" data-target="disruptions-body">
+        <div class="status-accordion-header closed" data-target="disruptions-body">
           <span class="status-bullet closed"></span>
           <span class="status-name">Disruptions</span>
           <span class="status-text">${disruptions.length} active</span>
@@ -165,12 +162,12 @@ const Status = (() => {
           ${disruptions.map(d => `
             <div class="disruption-item">
               <div class="disruption-header">
-                <span class="disruption-type ${(d.category||'').toLowerCase()}">${esc(d.category || 'Alert')}</span>
-                <span class="disruption-summary">${esc(d.summary || d.description || '')}</span>
+                <span class="disruption-type ${(d.category||'').toLowerCase()}">${Helpers.esc(d.category || 'Alert')}</span>
+                <span class="disruption-summary">${Helpers.esc(d.summary || d.description || '')}</span>
               </div>
-              ${d.description ? `<div class="disruption-desc">${esc(d.description)}</div>` : ''}
-              ${d.closureText ? `<div class="disruption-closure">${esc(d.closureText)}</div>` : ''}
-              ${d.affectedRoutes && d.affectedRoutes.length ? `<div class="disruption-routes">Affected: ${d.affectedRoutes.map(r => esc(r.name)).filter(Boolean).join(', ')}</div>` : ''}
+              ${d.description ? `<div class="disruption-desc">${Helpers.esc(d.description)}</div>` : ''}
+              ${d.closureText ? `<div class="disruption-closure">${Helpers.esc(d.closureText)}</div>` : ''}
+              ${d.affectedRoutes && d.affectedRoutes.length ? `<div class="disruption-routes">Affected: ${d.affectedRoutes.map(r => Helpers.esc(r.name)).filter(Boolean).join(', ')}</div>` : ''}
             </div>
           `).join('')}
         </div>

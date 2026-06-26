@@ -1,4 +1,4 @@
-const CACHE = 'lt-cache-v4';
+const CACHE = 'lt-cache-v7';
 const API_CACHE = 'lt-api-v1';
 const TILE_CACHE = 'lt-tiles-v1';
 const BASE = (self.location.pathname.replace(/\/sw\.js$/, '') || '').replace(/\/+$/, '');
@@ -14,7 +14,7 @@ const STATIC = [
   '/js/ui-departures.js', '/js/ui-timetable.js',
   '/js/ui-nearby.js', '/js/ui-bikes.js',
   '/js/ui-route.js', '/js/ui-favorites.js',
-  '/js/ui-helpers.js', '/js/app.js', '/js/offline-manager.js',
+  '/js/ui-helpers.js', '/js/helpers.js', '/js/modes.js', '/js/trip-navigation.js', '/js/app.js', '/js/offline-manager.js',
   '/img/icon.svg', '/img/icon-192.png', '/img/icon-512.png',
   '/img/people-walking-across-a-busy-city-street-with-blurred-background-photo.jpg',
   '/manifest.json'
@@ -110,33 +110,52 @@ async function handleRequest(request) {
 
 self.addEventListener('install', e => {
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(STATIC)).catch(() => {}));
+  e.waitUntil(caches.open(CACHE).then(async c => {
+    try {
+      await c.addAll(STATIC);
+    } catch (err) {
+      console.warn('[SW] addAll failed, caching individually', err);
+      for (const url of STATIC) {
+        try { await c.add(url); } catch (e) {
+          console.warn('[SW] Failed to cache', url, e);
+        }
+      }
+    }
+  }));
 });
 
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys => Promise.all(keys.map(k => {
       if (k !== CACHE && k !== API_CACHE && k !== TILE_CACHE) return caches.delete(k);
-    }))).then(() => {
+    }))).then(() => Promise.all([
       // Evict stale API cache entries (older than 24h)
       caches.open(API_CACHE).then(cache => {
-        cache.keys().then(requests => {
+        return cache.keys().then(requests => {
           const now = Date.now();
-          requests.forEach(req => {
-            cache.match(req).then(resp => {
+          return Promise.all(requests.map(req => {
+            return cache.match(req).then(resp => {
               if (resp) {
                 const date = resp.headers.get('date');
                 if (date) {
                   const age = now - new Date(date).getTime();
-                  if (age > 86400000) cache.delete(req);
+                  if (age > 86400000) return cache.delete(req);
                 }
               }
             });
-          });
+          }));
         });
-      });
-      return self.clients.claim();
-    })
+      }),
+      // Limit tile cache to 500 entries
+      caches.open(TILE_CACHE).then(cache => {
+        return cache.keys().then(keys => {
+          if (keys.length > 500) {
+            const toDelete = keys.slice(0, keys.length - 500);
+            return Promise.all(toDelete.map(k => cache.delete(k)));
+          }
+        });
+      })
+    ])).then(() => self.clients.claim())
   );
 });
 

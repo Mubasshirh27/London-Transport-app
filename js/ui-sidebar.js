@@ -1,6 +1,5 @@
 (function() {
   const UI = window.UI = window.UI || {};
-  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
 
   let statusLines = [];
   let mapOpen = false;
@@ -15,19 +14,31 @@
     setupPinButtons();
     setupFavButtons();
     setupActionButtons();
+    setupLiveClock();
     if (UI._initStopCheck) UI._initStopCheck();
     if (UI._initJourneyAutocomplete) UI._initJourneyAutocomplete();
     loadStatus();
   };
 
+  function updateTabIndicator() {
+    const active = document.querySelector('.tab-btn.active');
+    const indicator = document.getElementById('tab-indicator');
+    if (!active || !indicator) return;
+    const rect = active.getBoundingClientRect();
+    const barRect = document.getElementById('tab-bar').getBoundingClientRect();
+    indicator.style.left = (rect.left - barRect.left) + 'px';
+    indicator.style.width = rect.width + 'px';
+  }
+
   function setupTabs() {
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => { b.classList.remove('active'); b.setAttribute('aria-selected', 'false'); });
         document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
-        btn.classList.add('active');
+        btn.classList.add('active'); btn.setAttribute('aria-selected', 'true');
         const tabEl = document.getElementById('tab-' + btn.dataset.tab);
         if (tabEl) tabEl.classList.add('active');
+        updateTabIndicator();
         // Init bike autocomplete when bikes tab shown
         if (btn.dataset.tab === 'bikes' && UI._setupBikeAutocomplete) {
           UI._setupBikeAutocomplete();
@@ -37,6 +48,8 @@
         }
       });
     });
+    updateTabIndicator();
+    window.addEventListener('resize', updateTabIndicator);
   }
 
   function setupTimeSelector() {
@@ -127,6 +140,16 @@
     });
   }
 
+  function setupLiveClock() {
+    const el = document.getElementById('live-clock');
+    if (!el) return;
+    function tick() {
+      el.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    tick();
+    setInterval(tick, 1000);
+  }
+
   function setupActionButtons() {
     document.getElementById('plan-btn').addEventListener('click', () => document.dispatchEvent(new Event('plan-journey')));
     document.getElementById('swap-btn').addEventListener('click', swapLocations);
@@ -152,28 +175,17 @@
   }
 
   function toggleMap() {
-    // Prevent rapid repeated toggles which can leave overlay/map in an inconsistent state
-    if (window.__mapToggleBusy) return;
-    window.__mapToggleBusy = true;
-    setTimeout(() => { window.__mapToggleBusy = false; }, 350);
-
     const overlay = document.getElementById('map-overlay');
-    if (overlay.dataset.tripFs) return;
-    if (overlay.classList.contains('floating')) {
-      overlay.classList.remove('floating', 'popout');
-    }
+    if (!overlay) return;
+
+    const willBeOpen = !overlay.classList.contains('open');
+    overlay.classList.toggle('open', willBeOpen);
+
     const btn = document.getElementById('map-toggle-btn');
-    mapOpen = !overlay.classList.contains('open');
-    overlay.classList.toggle('open', mapOpen);
-    btn.innerHTML = mapOpen ? '<span class="ic" data-ic="close"></span> Close' : '<span class="ic" data-ic="map"></span> Map';
-    document.body.style.overflow = mapOpen ? 'hidden' : '';
-    if (!mapOpen) window.__legViewActive = false;
-    document.dispatchEvent(new CustomEvent('toggle-map', { detail: { open: mapOpen } }));
-    if (mapOpen && typeof MapView !== 'undefined') {
-      setTimeout(() => {
-        const map = MapView.getMap();
-        if (map) map.invalidateSize();
-      }, 100);
+    if (btn) btn.textContent = willBeOpen ? 'Close' : 'Map';
+
+    if (!willBeOpen) {
+      window.__legViewActive = false;
     }
   }
 
@@ -258,7 +270,7 @@
       const statusText = line ? (line.statusText || (line.statusCls === 'good' ? 'Good Service' : line.reason || 'Check status')) : 'Checking...';
       const color = line && line.color ? line.color : '#888';
       const isNR = sl.mode === 'national-rail';
-      const eSlId = esc(sl.id), eSlName = esc(sl.name), eStatus = esc(statusText || '');
+      const eSlId = Helpers.esc(sl.id), eSlName = Helpers.esc(sl.name), eStatus = Helpers.esc(statusText || '');
       html += '<div class="my-lines-item" data-line="' + eSlId + '">'
         + '<span class="my-lines-dot" style="background:' + color + '"></span>'
         + '<span class="my-lines-name">' + eSlName + '</span>'

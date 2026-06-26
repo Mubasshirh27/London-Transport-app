@@ -1,6 +1,5 @@
 (function() {
   const UI = window.UI = window.UI || {};
-  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
 
   function showPanel(panelId) {
     const panel = document.getElementById(panelId);
@@ -36,8 +35,8 @@
       });
       list.innerHTML = stops.slice(0, 20).map(s => {
         const pm = s.modes.includes('bus') ? 'bus' : (s.modes[0] || '');
-        const stopLetterHtml = s.stopLetter ? '<span class="stop-letter">' + esc(s.stopLetter) + '</span>' : '';
-        return '<div class="stop-item" data-stop-id="' + esc(s.id) + '" data-lat="' + s.lat + '" data-lon="' + s.lon + '" data-stop-letter="' + esc(s.stopLetter || '') + '"><span class="stop-icon">' + Stops.getModeIcon(pm) + '</span><span class="stop-name">' + esc(s.name) + '</span>' + stopLetterHtml + '<span class="stop-dist">' + Math.round(s.distance) + 'm</span><span class="stop-modes">' + s.modes.map(function(m) { return Stops.getModeIcon(m); }).join('') + '</span></div>';
+        const stopLetterHtml = s.stopLetter ? '<span class="stop-letter">' + Helpers.esc(s.stopLetter) + '</span>' : '';
+        return '<div class="stop-item" data-stop-id="' + Helpers.esc(s.id) + '" data-lat="' + s.lat + '" data-lon="' + s.lon + '" data-stop-letter="' + Helpers.esc(s.stopLetter || '') + '"><span class="stop-icon">' + Stops.getModeIcon(pm) + '</span><span class="stop-name">' + Helpers.esc(s.name) + '</span>' + stopLetterHtml + '<span class="stop-dist">' + Math.round(s.distance) + 'm</span><span class="stop-modes">' + s.modes.map(function(m) { return Stops.getModeIcon(m); }).join('') + '</span></div>';
       }).join('');
       list.querySelectorAll('.stop-item').forEach(function(item) {
         item.addEventListener('click', async function() {

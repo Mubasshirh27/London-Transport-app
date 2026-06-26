@@ -188,19 +188,6 @@ const Api = (() => {
     return null;
   }
 
-  async function searchPostcodes(query) {
-    const ctl = new AbortController();
-    const tid = setTimeout(() => ctl.abort(), 10000);
-    try {
-      const res = await fetch(`https://api.postcodes.io/postcodes?q=${encodeURIComponent(query.trim())}&limit=5`, { signal: ctl.signal });
-      clearTimeout(tid);
-      if (!res.ok) return [];
-      const data = await res.json();
-      if (data && Array.isArray(data.result)) return data.result.map(r => ({ label: r.postcode, lat: r.latitude, lon: r.longitude }));
-    } catch { clearTimeout(tid); }
-    return [];
-  }
-
   async function getLineStatus(modes) {
     return fetchTfl('/Line/Mode/' + (modes || 'tube,dlr,overground,elizabeth-line,bus') + '/Status');
   }
@@ -235,5 +222,5 @@ const Api = (() => {
     });
   }
 
-  return { fetchTfl, getJourney, getStopArrivals, getNearbyStops, searchStops, getLineStatus, getLineRoutes, getBikePoints, getDisruptions, getStopProperties, getMetaModes, parseCoord, getLineStopPoints, getLineById, geocodePostcode, searchPostcodes, getWalkingRoute, getLineTimetable, getStopRoutes, getStopTimetable, normalizeLineId };
+  return { fetchTfl, getJourney, getStopArrivals, getNearbyStops, searchStops, getLineStatus, getLineRoutes, getBikePoints, getDisruptions, getStopProperties, getMetaModes, parseCoord, getLineStopPoints, getLineById, geocodePostcode, getWalkingRoute, getLineTimetable, getStopRoutes, getStopTimetable, normalizeLineId };
 })();

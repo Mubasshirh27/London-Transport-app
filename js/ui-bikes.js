@@ -1,14 +1,5 @@
 (function() {
   const UI = window.UI = window.UI || {};
-  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
-
-  function haversine(lat1, lon1, lat2, lon2) {
-    const R = 6371000;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  }
 
   UI.showBikePanel = function(points, centerLat, centerLon) {
     const list = document.getElementById('bike-list');
@@ -17,7 +8,7 @@
       return;
     }
     const sorted = [...points].map(p => {
-      const d = Math.round(haversine(centerLat != null ? centerLat : 51.5, centerLon != null ? centerLon : -0.12, p.lat, p.lon));
+      const d = Math.round(Helpers.haversine(centerLat != null ? centerLat : 51.5, centerLon != null ? centerLon : -0.12, p.lat, p.lon));
       return { ...p, dist: d };
     }).sort((a, b) => a.dist - b.dist);
 
@@ -26,9 +17,9 @@
     list.innerHTML = sorted.map(p => {
       const pct = p.docks > 0 ? Math.round((p.bikes / p.docks) * 100) : 0;
       const barColor = pct > 50 ? '#22c55e' : pct > 20 ? '#f59e0b' : '#ef4444';
-      const pId = esc(p.id || '');
-      const codeHtml = p.id ? '<span class="stop-code">' + esc(p.id.replace('BikePoints_', '')) + '</span>' : '';
-      return '<div class="stop-item" data-stop-id="' + pId + '" data-lat="' + p.lat + '" data-lon="' + p.lon + '"><span class="stop-icon">🚲</span><span class="stop-name">' + esc(p.name) + '</span>' + codeHtml + '<span style="font-size:10px;color:#60a5fa;min-width:30px;text-align:right">' + p.dist + 'm</span><span style="font-size:10px;display:flex;align-items:center;gap:2px"><span style="color:' + barColor + ';font-weight:700">' + p.bikes + '</span><span style="color:var(--text2)">/ ' + p.docks + '</span></span></div>';
+      const pId = Helpers.esc(p.id || '');
+      const codeHtml = p.id ? '<span class="stop-code">' + Helpers.esc(p.id.replace('BikePoints_', '')) + '</span>' : '';
+      return '<div class="stop-item" data-stop-id="' + pId + '" data-lat="' + p.lat + '" data-lon="' + p.lon + '"><span class="stop-icon">🚲</span><span class="stop-name">' + Helpers.esc(p.name) + '</span>' + codeHtml + '<span style="font-size:10px;color:#60a5fa;min-width:30px;text-align:right">' + p.dist + 'm</span><span style="font-size:10px;display:flex;align-items:center;gap:2px"><span style="color:' + barColor + ';font-weight:700">' + p.bikes + '</span><span style="color:var(--text2)">/ ' + p.docks + '</span></span></div>';
     }).join('');
 
     if (!window._bikeRouteLayers) window._bikeRouteLayers = [];

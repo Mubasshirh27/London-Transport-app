@@ -1,6 +1,5 @@
 (function() {
   const UI = window.UI = window.UI || {};
-  function esc(s) { return String(s).replace(/[&<>"']/g, function(m) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
 
   function getDateSchedule(schedules, date) {
     const day = date.getDay(); // 0=Sun, 6=Sat
@@ -131,26 +130,30 @@
   }
 
   async function fetchAllTimetables(stopIds, lineId) {
-    const results = [];
     const dirs = ['inbound', 'outbound'];
+    const tasks = [];
     for (const sid of stopIds) {
       for (const dir of dirs) {
-        try {
-          console.log('[Timetable] Trying stopId:', sid, 'line:', lineId, 'dir:', dir);
-          const data = await Api.getLineTimetable(lineId, sid, dir);
-          if (data && data.timetable) {
-            const hasRoutes = data.timetable.routes && data.timetable.routes.length && data.timetable.routes.some(r => r.schedules && r.schedules.length);
-            const hasSchedules = data.timetable.schedules && data.timetable.schedules.length;
-            if (hasRoutes || hasSchedules) {
-              console.log('[Timetable] Got timetable data from', sid, 'dir:', dir);
-              results.push(data);
+        tasks.push((async () => {
+          try {
+            console.log('[Timetable] Trying stopId:', sid, 'line:', lineId, 'dir:', dir);
+            const data = await Api.getLineTimetable(lineId, sid, dir);
+            if (data && data.timetable) {
+              const hasRoutes = data.timetable.routes && data.timetable.routes.length && data.timetable.routes.some(r => r.schedules && r.schedules.length);
+              const hasSchedules = data.timetable.schedules && data.timetable.schedules.length;
+              if (hasRoutes || hasSchedules) {
+                console.log('[Timetable] Got timetable data from', sid, 'dir:', dir);
+                return data;
+              }
             }
+          } catch (e) {
+            console.log('[Timetable] Failed:', sid, 'dir:', dir, '-', e.message);
           }
-        } catch (e) {
-          console.log('[Timetable] Failed:', sid, 'dir:', dir, '-', e.message);
-        }
+          return null;
+        })());
       }
     }
+    const results = (await Promise.all(tasks)).filter(Boolean);
     return results;
   }
 
@@ -336,7 +339,7 @@
               const dateRange = w.fromDate && w.toDate
                 ? new Date(w.fromDate).toLocaleDateString('en',{month:'short',day:'numeric'}) + '-' + new Date(w.toDate).toLocaleDateString('en',{month:'short',day:'numeric'})
                 : w.fromDate ? new Date(w.fromDate).toLocaleDateString('en',{month:'short',day:'numeric'}) : '';
-              html += '<div style="margin-top:' + (d ? 4 : 0) + 'px"><span class="tt-disruption-icon">\u26a0\ufe0f</span> <strong>Planned works' + (dateRange ? ' ' + dateRange : '') + '</strong> &mdash; ' + esc(w.closureText) + '</div>';
+              html += '<div style="margin-top:' + (d ? 4 : 0) + 'px"><span class="tt-disruption-icon">\u26a0\ufe0f</span> <strong>Planned works' + (dateRange ? ' ' + dateRange : '') + '</strong> &mdash; ' + Helpers.esc(w.closureText) + '</div>';
             });
             banner.innerHTML = html;
             banner.className = 'tt-disruption-banner tt-ds-minor';
@@ -393,7 +396,7 @@
     const ls = _ttCache && _ttCache.lineStops;
     const dn = _ttCache && _ttCache.displayName;
     const mapBarHtml = ls && Array.isArray(ls) && ls.length > 2
-      ? '<div class="tt-map-bar"><span class="tt-map-bar-text">\u{1F4CD} ' + esc(dn || lineId) + ' (' + ls.length + ' stops)</span><button class="tt-map-btn" data-stop="' + esc(stopId) + '" data-line="' + esc(lineId) + '">\u{1F5FA}\ufe0f Show on map</button></div>'
+      ? '<div class="tt-map-bar"><span class="tt-map-bar-text">\u{1F4CD} ' + Helpers.esc(dn || lineId) + ' (' + ls.length + ' stops)</span><button class="tt-map-btn" data-stop="' + Helpers.esc(stopId) + '" data-line="' + Helpers.esc(lineId) + '">\u{1F5FA}\ufe0f Show on map</button></div>'
       : '';
 
     let html = dateBarHtml +
@@ -423,12 +426,12 @@
     let arrivals = [];
     try { arrivals = await (Stops.getArrivalsForStopGroup ? Stops.getArrivalsForStopGroup(stopId) : Stops.getArrivals(stopId)); } catch (e) { console.log('[Timetable] Arrivals error:', e); }
     const displayName = arrivals.length ? (arrivals.find(a => a.lineId === lineId || a.line === lineId)?.line || lineId) : lineId;
-    const eLineId = esc(lineId), eDisplayName = esc(displayName), eStopName = esc(stopName), eStopId = esc(stopId);
-    const headerSuffix = directionFilter ? ' (' + esc(directionFilter) + ')' : '';
+    const eLineId = Helpers.esc(lineId), eDisplayName = Helpers.esc(displayName), eStopName = Helpers.esc(stopName), eStopId = Helpers.esc(stopId);
+    const headerSuffix = directionFilter ? ' (' + Helpers.esc(directionFilter) + ')' : '';
     const isLineSaved = typeof Store !== 'undefined' && Store.isLineSaved(lineId);
     const saveBtn = isLineSaved
-      ? '<button class="line-save-btn saved" data-line="' + eLineId + '" data-name="' + eDisplayName + '" data-mode="' + esc(arrivals.length ? arrivals[0]?.mode || 'tube' : 'tube') + '" title="Remove from My Lines">\u2605</button>'
-      : '<button class="line-save-btn" data-line="' + eLineId + '" data-name="' + eDisplayName + '" data-mode="' + esc(arrivals.length ? arrivals[0]?.mode || 'tube' : 'tube') + '" title="Save to My Lines">\u2606</button>';
+      ? '<button class="line-save-btn saved" data-line="' + eLineId + '" data-name="' + eDisplayName + '" data-mode="' + Helpers.esc(arrivals.length ? arrivals[0]?.mode || 'tube' : 'tube') + '" title="Remove from My Lines">\u2605</button>'
+      : '<button class="line-save-btn" data-line="' + eLineId + '" data-name="' + eDisplayName + '" data-mode="' + Helpers.esc(arrivals.length ? arrivals[0]?.mode || 'tube' : 'tube') + '" title="Save to My Lines">\u2606</button>';
     panel.querySelector('h3').innerHTML = saveBtn + ' 📋 ' + eDisplayName + headerSuffix + ' Timetable \u00b7 ' + eStopName + ' <span class="stop-code">' + eStopId + '</span>';
 
     const resolvedStopIds = await Stops.resolveStopIds(stopId).catch(() => [stopId]);
@@ -470,7 +473,7 @@
     panel.dataset.stopId = stopId;
     const list = document.getElementById('departures-list');
     list.innerHTML = '<div class="loading"><div style="display:flex;flex-direction:column;gap:4px;padding:4px 8px">' + Array(4).fill('<div class="sk-card-row"><div class="sk sk-circle" style="width:22px;height:22px"></div><div class="sk sk-line" style="width:50%"></div><div class="sk sk-line-sm" style="width:30%"></div><div class="sk sk-line-sm" style="width:20px"></div></div>').join('') + '</div></div>';
-    panel.querySelector('h3').innerHTML = '📋 ' + esc(stopName) + ' Timetable <span class="stop-code">' + esc(stopId) + '</span>';
+    panel.querySelector('h3').innerHTML = '📋 ' + Helpers.esc(stopName) + ' Timetable <span class="stop-code">' + Helpers.esc(stopId) + '</span>';
     let routes = [], liveArrivals = [], routeModeMap = {};
     try {
       liveArrivals = await Stops.getArrivals(stopId);
@@ -511,9 +514,9 @@
       const color = Stops.getModeColor(mode);
       const nextDue = routeLive.length ? routeLive[0].timeToStation : null;
       const nextText = nextDue !== null ? (nextDue <= 0 ? 'Due' : nextDue + ' min') : '';
-      html += '<button class="tt-route-btn" data-stop="' + esc(stopId) + '" data-line="' + esc(r) + '" style="border-left-color:' + color + '">' +
+      html += '<button class="tt-route-btn" data-stop="' + Helpers.esc(stopId) + '" data-line="' + Helpers.esc(r) + '" style="border-left-color:' + color + '">' +
         '<span class="tt-route-icon">' + Stops.getModeIcon(mode) + '</span>' +
-        '<span class="tt-route-num" style="background:' + color + '">' + esc(r) + '</span>' +
+        '<span class="tt-route-num" style="background:' + color + '">' + Helpers.esc(r) + '</span>' +
         '<span class="tt-route-next">' + nextText + '</span>' +
         '<span class="tt-route-arrow">\u2192</span></button>';
     });
@@ -570,17 +573,12 @@ document.addEventListener('click', (e) => {
     MapView.showRouteStopMarkers(mapped, lineColor);
     MapView.fitBounds([coords]);
     const overlay = document.getElementById('map-overlay');
-    if (overlay) {
-      if (overlay.classList.contains('floating')) {
-        overlay.classList.remove('popout');
-        overlay.style.left = ''; overlay.style.top = ''; overlay.style.bottom = ''; overlay.style.right = ''; overlay.style.width = ''; overlay.style.height = '';
-      } else if (!overlay.classList.contains('open')) {
-        overlay.classList.add('open');
-        const toggle = document.getElementById('map-toggle-btn');
-        if (toggle) toggle.innerHTML = '<span class="ic" data-ic="close"></span> Close';
-        document.body.style.overflow = 'hidden';
-      }
-      setTimeout(() => { const m = MapView.getMap && MapView.getMap(); if (m && m.invalidateSize) m.invalidateSize(); }, 100);
+    if (overlay && !overlay.classList.contains('open')) {
+      overlay.classList.add('open');
+      const toggle = document.getElementById('map-toggle-btn');
+      if (toggle) toggle.innerHTML = '<span class="ic" data-ic="close"></span> Close';
+      document.body.style.overflow = 'hidden';
     }
+    if (typeof MapView.getMap === 'function') MapView.getMap();
   }
 });

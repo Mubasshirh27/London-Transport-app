@@ -12,7 +12,6 @@
   <link rel="icon" href="img/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="img/icon-192.png">
   <title>London Transit</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.min.css" />
   <link rel="stylesheet" href="css/style.css" />
 </head>
@@ -21,23 +20,25 @@
   <div id="main-ui">
     <header id="header-bar">
       <div class="header-left">
-        <span class="header-title"><span class="ic" data-ic="tube"></span> London Transit</span>
+        <h1 class="header-title"><span class="ic" aria-hidden="true" data-ic="tube"></span> London Transit</h1>
         <span id="status-indicator" class="status-indicator"></span>
+        <span id="live-clock" class="live-clock"></span>
       </div>
       <span id="offline-badge" class="offline-badge" style="display:none">Offline</span>
       <span id="sync-indicator" class="sync-indicator synced" title="Synced"></span>
       <div class="header-right">
-        <button id="live-toggle" class="header-btn" title="Live location tracking"><span class="ic" data-ic="gps"></span></button>
-        <button id="refresh-btn" class="header-btn" title="Refresh page"><span class="ic" data-ic="refresh"></span></button>
-        <button id="map-toggle-btn" class="header-btn map-btn" title="Open map"><span class="ic" data-ic="map"></span> Map</button>
+        <button id="live-toggle" class="header-btn" title="Live location tracking"><span class="ic" aria-hidden="true" data-ic="gps"></span></button>
+        <button id="refresh-btn" class="header-btn" title="Refresh page"><span class="ic" aria-hidden="true" data-ic="refresh"></span></button>
+        <button id="map-toggle-btn" class="header-btn map-btn" title="Open map"><span class="ic" aria-hidden="true" data-ic="map"></span> Map</button>
       </div>
     </header>
 
-    <nav id="tab-bar">
-      <button class="tab-btn active" data-tab="journey"><span class="ic" data-ic="journey"></span> Journey</button>
-      <button class="tab-btn" data-tab="routes"><span class="ic" data-ic="route"></span> Routes</button>
-      <button class="tab-btn" data-tab="bikes"><span class="ic" data-ic="bike"></span> Bikes</button>
-      <button class="tab-btn" data-tab="status"><span class="ic" data-ic="status"></span> Status</button>
+    <nav id="tab-bar" role="tablist" aria-label="Main navigation">
+      <button class="tab-btn active" data-tab="journey" role="tab" aria-selected="true"><span class="ic" aria-hidden="true" data-ic="journey"></span> Journey</button>
+      <button class="tab-btn" data-tab="routes" role="tab" aria-selected="false"><span class="ic" aria-hidden="true" data-ic="route"></span> Routes</button>
+      <button class="tab-btn" data-tab="bikes" role="tab" aria-selected="false"><span class="ic" aria-hidden="true" data-ic="bike"></span> Bikes</button>
+      <button class="tab-btn" data-tab="status" role="tab" aria-selected="false"><span class="ic" aria-hidden="true" data-ic="status"></span> Status</button>
+      <span id="tab-indicator"></span>
     </nav>
 
     <main id="main-content">
@@ -46,64 +47,69 @@
         <div id="search-box">
           <div class="search-row">
             <div class="input-wrap">
-              <input type="text" id="from-input" placeholder="From" autocomplete="off">
+              <input type="text" id="from-input" placeholder="From" autocomplete="off" aria-label="From">
               <div class="suggestions" id="from-suggestions"></div>
             </div>
-            <button class="map-pin" data-target="from" title="Click on map"><span class="ic" data-ic="pin"></span></button>
-            <button class="fav-btn" data-target="from" title="Saved places"><span class="ic" data-ic="star"></span></button>
+            <button class="map-pin" data-target="from" title="Click on map"><span class="ic" aria-hidden="true" data-ic="pin"></span></button>
+            <button class="fav-btn" data-target="from" title="Saved places"><span class="ic" aria-hidden="true" data-ic="star"></span></button>
           </div>
           <div class="search-row">
             <div class="input-wrap">
-              <input type="text" id="to-input" placeholder="To" autocomplete="off">
+              <input type="text" id="to-input" placeholder="To" autocomplete="off" aria-label="To">
               <div class="suggestions" id="to-suggestions"></div>
             </div>
-            <button class="map-pin" data-target="to" title="Click on map"><span class="ic" data-ic="pin"></span></button>
-            <button class="fav-btn" data-target="to" title="Saved places"><span class="ic" data-ic="star"></span></button>
+            <button class="map-pin" data-target="to" title="Click on map"><span class="ic" aria-hidden="true" data-ic="pin"></span></button>
+            <button class="fav-btn" data-target="to" title="Saved places"><span class="ic" aria-hidden="true" data-ic="star"></span></button>
           </div>
-          <div class="search-extras">
-            <div class="time-selector">
-              <button data-mode="now" class="time-btn active"><span class="ic" data-ic="clock"></span> Now</button>
-              <button data-mode="depart" class="time-btn">Depart</button>
-              <button data-mode="arrive" class="time-btn">Arrive</button>
-              <input type="time" id="time-picker" disabled value="">
-              <input type="date" id="date-picker" disabled value="">
-            </div>
-            <div class="mode-filter">
-              <span class="mode-filter-label">Modes:</span>
-              <button data-mode="bus" class="mode-btn active" title="Bus"><span class="ic" data-ic="bus"></span></button>
-              <button data-mode="tube" class="mode-btn active" title="Tube"><span class="ic" data-ic="tube"></span></button>
-              <button data-mode="dlr" class="mode-btn active" title="DLR"><span class="ic" data-ic="dlr"></span></button>
-              <button data-mode="overground" class="mode-btn active" title="Overground"><span class="ic" data-ic="overground"></span></button>
-              <button data-mode="elizabeth-line" class="mode-btn active" title="Elizabeth Line"><span class="ic" data-ic="elizabeth"></span></button>
-              <button data-mode="walking" class="mode-btn active" title="Walking"><span class="ic" data-ic="walk"></span></button>
-            </div>
-            <div class="search-actions">
-              <button id="plan-btn" class="btn-primary"><span class="ic" data-ic="search"></span> Plan Journey</button>
-              <button id="swap-btn" class="btn-secondary" title="Swap from/to"><span class="ic" data-ic="swap"></span></button>
-              <button id="clear-btn" class="btn-secondary" title="Clear"><span class="ic" data-ic="close"></span></button>
-              <button id="nearby-btn" class="btn-secondary" title="Show nearby stops from current location"><span class="ic" data-ic="nearby"></span> Nearby</button>
-            </div>
+          <div class="search-extras-bar">
+            <button id="plan-btn" class="btn-primary"><span class="ic" aria-hidden="true" data-ic="search"></span> Plan Journey</button>
+            <button id="more-options-btn" class="btn-secondary" title="More options">Options ▾</button>
           </div>
-          <div class="stop-check-section">
-            <div class="stop-check-label"><span class="ic" data-ic="search"></span> Search Stop or Station</div>
-            <div class="stop-check-row">
-              <div class="input-wrap">
-                <input type="text" id="stop-check-input" placeholder="Search stop or station..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
-                <div class="suggestions" id="stop-check-suggestions"></div>
+          <div id="search-extras-collapsible" class="search-extras-collapsible collapsed">
+            <div class="search-extras">
+              <div class="time-selector">
+                <button data-mode="now" class="time-btn active"><span class="ic" aria-hidden="true" data-ic="clock"></span> Now</button>
+                <button data-mode="depart" class="time-btn">Depart</button>
+                <button data-mode="arrive" class="time-btn">Arrive</button>
+                <input type="time" id="time-picker" disabled value="" aria-label="Departure time">
+                <input type="date" id="date-picker" disabled value="" aria-label="Departure date">
               </div>
-              <button id="stop-check-btn" class="btn-secondary" title="Search stop"><span class="ic" data-ic="search"></span></button>
+              <div class="mode-filter">
+                <span class="mode-filter-label">Modes:</span>
+                <button data-mode="bus" class="mode-btn active" title="Bus"><span class="ic" aria-hidden="true" data-ic="bus"></span></button>
+                <button data-mode="tube" class="mode-btn active" title="Tube"><span class="ic" aria-hidden="true" data-ic="tube"></span></button>
+                <button data-mode="dlr" class="mode-btn active" title="DLR"><span class="ic" aria-hidden="true" data-ic="dlr"></span></button>
+                <button data-mode="overground" class="mode-btn active" title="Overground"><span class="ic" aria-hidden="true" data-ic="overground"></span></button>
+                <button data-mode="elizabeth-line" class="mode-btn active" title="Elizabeth Line"><span class="ic" aria-hidden="true" data-ic="elizabeth"></span></button>
+                <button data-mode="walking" class="mode-btn active" title="Walking"><span class="ic" aria-hidden="true" data-ic="walk"></span></button>
+              </div>
+              <div class="search-actions">
+                <button id="swap-btn" class="btn-secondary" title="Swap from/to"><span class="ic" aria-hidden="true" data-ic="swap"></span></button>
+                <button id="clear-btn" class="btn-secondary" title="Clear"><span class="ic" aria-hidden="true" data-ic="close"></span></button>
+                <button id="nearby-btn" class="btn-secondary" title="Show nearby stops from current location"><span class="ic" aria-hidden="true" data-ic="nearby"></span> Nearby</button>
+              </div>
+            </div>
+            <div class="stop-check-section">
+              <div class="stop-check-label"><span class="ic" aria-hidden="true" data-ic="search"></span> Search Stop or Station</div>
+              <div class="stop-check-row">
+                <div class="input-wrap">
+                  <input type="text" id="stop-check-input" placeholder="Search stop or station..." autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Search stop or station">
+                  <div class="suggestions" id="stop-check-suggestions"></div>
+                </div>
+                <button id="stop-check-btn" class="btn-secondary" title="Search stop"><span class="ic" aria-hidden="true" data-ic="search"></span></button>
+              </div>
             </div>
           </div>
         </div>
-        <div id="results-panel">
+        <div id="results-panel" aria-live="polite">
         </div>
       </div>
 
       <div id="tab-routes" class="tab-content">
         <div id="route-explorer">
           <div class="route-search-row">
-            <input type="text" id="route-input" placeholder="e.g. 73, Central, Hammersmith & City..." autocomplete="off">
-            <button id="explore-route-btn" class="btn-primary"><span class="ic" data-ic="route"></span> Explore</button>
+            <input type="text" id="route-input" placeholder="e.g. 73, Central, Hammersmith & City..." autocomplete="off" aria-label="Search route">
+            <button id="explore-route-btn" class="btn-primary"><span class="ic" aria-hidden="true" data-ic="route"></span> Explore</button>
           </div>
           <div id="route-results"></div>
         </div>
@@ -113,11 +119,11 @@
         <div id="bike-panel-content">
           <div id="bike-search-bar" class="search-row bike-search-bar">
             <div class="input-wrap">
-              <input type="text" id="bike-search-input" placeholder="Search postcode, station, or place..." autocomplete="off" />
+              <input type="text" id="bike-search-input" placeholder="Search postcode, station, or place..." autocomplete="off" aria-label="Search postcode, station, or place" />
               <div class="suggestions" id="bike-search-suggestions"></div>
             </div>
-            <button id="bike-search-gps" class="btn-secondary" title="Use my location"><span class="ic" data-ic="gps"></span></button>
-            <button id="bike-search-pin" class="btn-secondary" title="Pin on map"><span class="ic" data-ic="pin"></span></button>
+            <button id="bike-search-gps" class="btn-secondary" title="Use my location"><span class="ic" aria-hidden="true" data-ic="gps"></span></button>
+            <button id="bike-search-pin" class="btn-secondary" title="Pin on map"><span class="ic" aria-hidden="true" data-ic="pin"></span></button>
           </div>
           <div id="bike-list"></div>
         </div>
@@ -125,7 +131,7 @@
 
       <div id="tab-status" class="tab-content">
         <div id="my-lines-section" class="my-lines-section"><div class="my-lines-header">My Lines</div><div id="my-lines-list" class="my-lines-list"></div></div>
-        <div id="status-content"></div>
+        <div id="status-content" aria-live="polite"></div>
       </div>
     </main>
   </div>
@@ -133,14 +139,14 @@
   <div id="slide-panels">
     <div id="nearby-panel" class="slide-panel">
       <div class="panel-header">
-        <h3><span class="ic" data-ic="nearby"></span> Nearby Stops</h3>
+        <h3><span class="ic" aria-hidden="true" data-ic="nearby"></span> Nearby Stops</h3>
         <div class="panel-actions">
-          <button class="panel-close" title="Close"><span class="ic" data-ic="close"></span></button>
+          <button class="panel-close" title="Close"><span class="ic" aria-hidden="true" data-ic="close"></span></button>
         </div>
       </div>
       <div class="panel-body" id="nearby-body">
         <div class="nearby-search-wrap">
-          <input type="text" id="nearby-search-input" placeholder="Search place to check nearby stops..." autocomplete="off" />
+          <input type="text" id="nearby-search-input" placeholder="Search place to check nearby stops..." autocomplete="off" aria-label="Search place" />
           <div class="suggestions" id="nearby-search-suggestions"></div>
         </div>
         <div id="nearby-list"></div>
@@ -148,23 +154,23 @@
     </div>
     <div id="departures-panel" class="slide-panel">
       <div class="panel-header">
-        <h3><span class="ic" data-ic="departures"></span> Live Departures <span class="live-badge">LIVE</span></h3>
+        <h3><span class="ic" aria-hidden="true" data-ic="departures"></span> Live Departures <span class="live-badge">LIVE</span></h3>
           <div class="panel-actions">
-            <button class="panel-timetable-btn" title="Full Day Timetable"><span class="ic" data-ic="timetable"></span></button>
-            <button class="panel-refresh" title="Refresh"><span class="ic" data-ic="refresh"></span></button>
-            <button class="panel-close" title="Close"><span class="ic" data-ic="close"></span></button>
+            <button class="panel-timetable-btn" title="Full Day Timetable"><span class="ic" aria-hidden="true" data-ic="timetable"></span></button>
+            <button class="panel-refresh" title="Refresh"><span class="ic" aria-hidden="true" data-ic="refresh"></span></button>
+            <button class="panel-close" title="Close"><span class="ic" aria-hidden="true" data-ic="close"></span></button>
         </div>
       </div>
-      <div class="panel-body" id="departures-list"></div>
+      <div class="panel-body" id="departures-list" aria-live="polite"></div>
     </div>
   </div>
 
   <div id="trip-nav-bar" style="display:none">
-    <div id="offline-banner" class="offline-banner" style="display:none"><span class="ic" data-ic="wifi_off"></span> No internet connection — trip continues offline</div>
+    <div id="offline-banner" class="offline-banner" style="display:none"><span class="ic" aria-hidden="true" data-ic="wifi_off"></span> No internet connection — trip continues offline</div>
     <div id="trip-nav-header">
       <div class="tl-drag-handle"></div>
       <div class="tl-header-row">
-        <button id="trip-nav-toggle"><span class="ic" data-ic="chevron_up"></span></button>
+        <button id="trip-nav-toggle" aria-label="Toggle trip details"><span class="ic" aria-hidden="true" data-ic="chevron_up"></span></button>
         <div id="trip-progress-bar"><div id="trip-progress-fill"></div></div>
         <span id="trip-eta"></span>
         <span id="trip-progress-text">0%</span>
@@ -172,34 +178,27 @@
       </div>
     </div>
     <div id="trip-nav-actions">
-      <button id="trip-recenter-btn" style="display:none"><span class="ic" data-ic="gps_fixed"></span> Follow</button>
-      <button id="trip-cancel-btn" onclick="document.dispatchEvent(new Event('end-trip'))">✕ End Trip</button>
+      <button id="trip-recenter-btn" style="display:none"><span class="ic" aria-hidden="true" data-ic="gps_fixed"></span> Follow</button>
+      <button id="trip-cancel-btn">✕ End Trip</button>
     </div>
     <div id="trip-nav-body">
       <div id="trip-timeline"></div>
     </div>
   </div>
 
-  <div id="map-overlay" class="hidden">
-    <div id="map-title-bar">
-      <span class="map-title-text"><span class="ic" data-ic="map"></span> Trip Map</span>
-      <button id="map-fullscreen-btn" class="map-title-btn" title="Fullscreen"><span class="ic" data-ic="fullscreen"></span></button>
-      <button id="map-pop-btn" class="map-title-btn" title="Pop in/out"><span class="ic" data-ic="chevron_down"></span></button>
-    </div>
+  <div id="map-overlay">
     <div id="map"></div>
-    <div id="map-3d" class="hidden"></div>
-    <button id="close-map-btn" class="map-overlay-btn" title="Close map"><span class="ic" data-ic="close"></span></button>
-    <button id="view-3d-btn" class="map-overlay-btn view-3d" title="Toggle 3D view"><span class="ic" data-ic="map"></span> 3D</button>
+    <button id="close-map-btn" class="map-overlay-btn" title="Close map"><span class="ic" aria-hidden="true" data-ic="close"></span></button>
+    <button id="view-3d-btn" class="map-overlay-btn" title="Toggle 3D terrain">3D</button>
     <div id="map-click-info" class="hidden">Click on map to set <strong id="click-target-label">from</strong> location</div>
-    <div id="map-resize-handle"></div>
-
+    <div id="map-legend" class="hidden"><span class="legend-item"><span class="legend-dot" style="background:var(--bus)"></span> Bus</span><span class="legend-item"><span class="legend-dot" style="background:var(--tube)"></span> Tube</span><span class="legend-item"><span class="legend-dot" style="background:var(--rail)"></span> Rail</span></div>
   </div>
 
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.min.js"></script>
+<script>window.__appState={activeJourneys:null,activeFromMarker:null,activeToMarker:null,pinTarget:null,currentStationIndex:-1,_walkOpen:{},_lastLat:null,_lastLon:null}</script>
+<script src="js/helpers.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/config.js"></script>
 <script src="js/offline-manager.js"></script>
@@ -207,6 +206,7 @@
   <script src="js/modes.js"></script>
   <script src="js/stops.js"></script>
 <script src="js/map.js"></script>
+<script src="js/trip-navigation.js"></script>
 <script src="js/geocoder.js"></script>
 <script src="js/router.js"></script>
 <script src="js/storage.js"></script>
@@ -222,6 +222,12 @@
 <script src="js/ui-route.js"></script>
 <script src="js/app.js"></script>
 <script>
+document.getElementById('more-options-btn')?.addEventListener('click', function() {
+  const el = document.getElementById('search-extras-collapsible');
+  if (!el) return;
+  const collapsed = el.classList.toggle('collapsed');
+  this.textContent = collapsed ? 'Options ▾' : 'Options ▴';
+});
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

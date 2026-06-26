@@ -6,9 +6,9 @@ const CONFIG = {
   nearbyRadius: 500,
   addressApiKey: '',
   tileProviders: [
-    { name: 'OpenStreetMap', url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a>', maxZoom: 19 },
+    { name: 'OpenStreetMap', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a>', maxZoom: 19 },
     { name: 'Esri World Street', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', attribution: '&copy; Esri', maxZoom: 18 },
-    { name: 'CartoDB Positron', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>', maxZoom: 19 }
+    { name: 'CartoDB Positron', url: 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png', attribution: '&copy; <a href="https://carto.com/attributions">CARTO</a>', maxZoom: 19 }
   ],
   tileProvider3d: [
     { name: 'OpenStreetMap', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19 },

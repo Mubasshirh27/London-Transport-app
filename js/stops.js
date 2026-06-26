@@ -24,9 +24,11 @@ const Stops = (() => {
     try {
       const sd = await Api.getStopProperties(stopId);
       if (sd.children && sd.children.length) {
+        const childResults = await Promise.all(sd.children.map(child =>
+          Api.getStopArrivals(child.id).catch(() => null)
+        ));
         const allArrivals = [];
-        for (const child of sd.children) {
-          const childData = await Api.getStopArrivals(child.id).catch(() => null);
+        for (const childData of childResults) {
           if (childData && Array.isArray(childData) && childData.length) {
             allArrivals.push(...childData);
           }
@@ -180,7 +182,7 @@ const Stops = (() => {
       if (!groups[key][subKey]) groups[key][subKey] = { lineKey, dir, plat, arrivals: [] };
       groups[key][subKey].arrivals.push(a);
     });
-    const modeOrder = ['bus', 'tube', 'national-rail', 'elizabeth-line', 'dlr', 'overground', 'tram', 'cableCar', 'riverBus', 'walking', 'other'];
+    const modeOrder = ['bus', 'tube', 'national-rail', 'elizabeth-line', 'dlr', 'overground', 'tram', 'cable-car', 'river-bus', 'walking', 'other'];
     const sorted = [];
     modeOrder.forEach(m => {
       if (groups[m]) {
