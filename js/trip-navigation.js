@@ -182,7 +182,7 @@ const TripNav = (() => {
           tripWatchId = startGPSWatch();
         }, _gpsRetryCount * 2000);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
     );
   }
 
@@ -1167,14 +1167,19 @@ const TripNav = (() => {
           navigator.geolocation.getCurrentPosition(
             (pos) => {
               const lat = pos.coords.latitude, lon = pos.coords.longitude;
+              const heading = pos.coords.heading;
+              const accuracy = pos.coords.accuracy;
               if (lat != null && lon != null && !isNaN(lat) && !isNaN(lon) && isFinite(lat) && isFinite(lon)) {
                 MapView.flyTo(lat, lon, 16);
+                // Update trip progress card immediately
+                updateTripProgress(lat, lon, pos);
+                MapView.showUserLocation(lat, lon, heading, accuracy);
               } else {
                 MapView.flyTo(51.5074, -0.1278, 14);
               }
             },
             () => { MapView.flyTo(51.5074, -0.1278, 14); },
-            { enableHighAccuracy: true, timeout: 8000 }
+            { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
           );
         }
       };
@@ -1406,10 +1411,32 @@ const TripNav = (() => {
     });
   }
 
+  function forceUpdatePosition() {
+  // Force a GPS refresh when reconnecting from offline
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const { latitude: lat, longitude: lon, heading, accuracy } = pos.coords;
+      console.log('[TripNav] Forced GPS update on reconnect:', lat, lon);
+      updateTripProgress(lat, lon, pos);
+      MapView.showUserLocation(lat, lon, heading, accuracy);
+      if (followEnabled && recenterBtn) {
+        MapView.panTo(lat, lon);
+        recenterBtn.style.display = 'none';
+      }
+    },
+    (err) => {
+      console.warn('[TripNav] Forced GPS update failed:', err.message);
+    },
+    { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+  );
+}
+
   return {
     init,
     drawJourneyRoutesOnMap,
     rerenderCurrentTimeline,
+    forceUpdatePosition,
     resetGpsRetryCount: () => { _gpsRetryCount = 0; },
     getTripActiveKey: () => tripActiveKey,
     getTripLegIndex: () => tripLegIndex

@@ -61,6 +61,10 @@
           if (typeof Stops.clearCache === 'function') Stops.clearCache();
         }
         TripNav.rerenderCurrentTimeline();
+        // Force GPS update for active trip on reconnect
+        if (typeof TripNav !== 'undefined' && TripNav.forceUpdatePosition) {
+          TripNav.forceUpdatePosition();
+        }
         // Refresh map tiles
         if (typeof MapView !== 'undefined' && MapView.refreshTiles) {
           MapView.refreshTiles();
@@ -738,7 +742,7 @@
             UI.showNearbyStops(lat, lon, true);
           },
           (err) => { UI.showError('Location error: ' + err.message); toggleLiveOff(); },
-          { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 1000 }
         );
         liveNearbyTimer = setInterval(async () => {
           if (MapView.isUserLocationVisible() && navigator.geolocation) {

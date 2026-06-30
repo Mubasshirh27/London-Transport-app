@@ -510,15 +510,29 @@ const MapView = (() => {
   function toggleTerrain() {
     if (!map || !mapLoaded) return;
     threeDEnabled = !threeDEnabled;
-    if (threeDEnabled) {
-      map.setPitch(60);
-      map.setLayoutProperty('sky', 'visibility', 'visible');
-      document.getElementById('view-3d-btn')?.classList.add('active');
-    } else {
-      map.setPitch(0);
-      map.setLayoutProperty('sky', 'visibility', 'none');
-      document.getElementById('view-3d-btn')?.classList.remove('active');
+    const targetPitch = threeDEnabled ? 60 : 0;
+
+    // Smooth transition to avoid marker distortion
+    map.easeTo({
+      pitch: targetPitch,
+      duration: 500,
+      easing: (t) => t * (2 - t)
+    });
+
+    map.setLayoutProperty('sky', 'visibility', threeDEnabled ? 'visible' : 'none');
+    
+    const btn = document.getElementById('view-3d-btn');
+    if (btn) {
+      if (threeDEnabled) btn.classList.add('active');
+      else btn.classList.remove('active');
     }
+
+    // Re-apply user marker position after transition to fix 3D perspective
+    setTimeout(() => {
+      if (userMarker && userLocData) {
+        userMarker.setLngLat([userLocData.lng, userLocData.lat]);
+      }
+    }, 550);
   }
 
   function refreshTiles() {
